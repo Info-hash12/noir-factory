@@ -251,6 +251,69 @@ router.post('/:id/reject', requireAuth, requireCompanyContext, async (req, res) 
 });
 
 /**
+ * POST /api/content-items/capture
+ * Capture content from a URL
+ */
+router.post('/capture', requireAuth, requireCompanyContext, async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: url'
+      });
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid URL format'
+      });
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    // Create content item with source_url
+    const { data: item, error } = await supabase
+      .from('content_items')
+      .insert({
+        company_id: req.company.id,
+        title: `Captured: ${url.substring(0, 50)}`,
+        excerpt: `URL captured from ${new URL(url).hostname}`,
+        source_url: url,
+        source_title: `Captured: ${url}`,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('Capture URL error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    res.json({
+      success: true,
+      item
+    });
+  } catch (error) {
+    logger.error('Capture URL error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/content-items/batch-approve
  * Approve multiple items at once
  */

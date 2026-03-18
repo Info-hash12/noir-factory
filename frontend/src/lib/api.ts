@@ -181,6 +181,14 @@ export function getEngagementStatsDetailed(params?: { period?: string; company_i
   return apiCall(`/engagement/stats/detailed${qs ? '?' + qs : ''}`);
 }
 
+// Content Item Capture
+export function captureUrl(url: string) {
+  return apiCall('/content-items/capture', {
+    method: 'POST',
+    body: { url }
+  });
+}
+
 // User
 export function getCurrentUser() {
   return apiCall('/auth/me');

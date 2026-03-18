@@ -27,7 +27,7 @@ export function QueuePage() {
 
   // Batch countdown timer
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (batchCountdown > 0) {
       interval = setInterval(() => {
         setBatchCountdown(prev => prev > 0 ? prev - 1 : 0);

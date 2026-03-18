@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useContentStore } from '../store/contentStore';
 import { SwipeCard } from '../components/SwipeCard';
 import { ApproveBottomSheet } from '../components/ApproveBottomSheet';
+import { CaptureBottomSheet } from '../components/CaptureBottomSheet';
+import { QuickPostBottomSheet } from '../components/QuickPostBottomSheet';
 import { motion } from 'framer-motion';
 import type { ContentItem } from '../types';
 
@@ -20,6 +22,8 @@ export function FeedPage() {
   } = useContentStore();
 
   const [showApproveSheet, setShowApproveSheet] = useState(false);
+  const [showCaptureSheet, setShowCaptureSheet] = useState(false);
+  const [showQuickPostSheet, setShowQuickPostSheet] = useState(false);
   const [scrollContainerRef] = useState(useRef<HTMLDivElement>(null));
 
   useEffect(() => {
@@ -42,6 +46,16 @@ export function FeedPage() {
   const handleApproveComplete = async () => {
     setShowApproveSheet(false);
     await nextContentItem();
+  };
+
+  const handleCaptured = () => {
+    // Refresh the feed to show the newly captured item
+    fetchContentItems(selectedFeedId || undefined);
+  };
+
+  const handlePosted = () => {
+    // Optionally refresh the queue to show the new job
+    // For now, just close and notify
   };
 
   const currentItem = contentItems[currentItemIndex] || null;
@@ -125,6 +139,50 @@ export function FeedPage() {
           contentItem={currentItem}
         />
       )}
+
+      {/* Capture Bottom Sheet */}
+      <CaptureBottomSheet
+        isOpen={showCaptureSheet}
+        onClose={() => setShowCaptureSheet(false)}
+        onCaptured={handleCaptured}
+      />
+
+      {/* Quick Post Bottom Sheet */}
+      <QuickPostBottomSheet
+        isOpen={showQuickPostSheet}
+        onClose={() => setShowQuickPostSheet(false)}
+        onPosted={handlePosted}
+      />
+
+      {/* Floating Action Buttons */}
+      <motion.div
+        className="fixed bottom-28 right-6 flex flex-col gap-3 z-30"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        {/* Quick Post FAB */}
+        <motion.button
+          onClick={() => setShowQuickPostSheet(true)}
+          className="w-14 h-14 rounded-full bg-accent-primary hover:shadow-lg hover:shadow-accent-primary/50 text-noir-bg flex items-center justify-center font-semibold text-xl transition-all shadow-lg min-h-[56px] min-w-[56px]"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          title="Quick Post"
+        >
+          ⚡
+        </motion.button>
+
+        {/* Capture FAB */}
+        <motion.button
+          onClick={() => setShowCaptureSheet(true)}
+          className="w-14 h-14 rounded-full bg-accent-primary hover:shadow-lg hover:shadow-accent-primary/50 text-noir-bg flex items-center justify-center font-semibold text-xl transition-all shadow-lg min-h-[56px] min-w-[56px]"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          title="Capture URL"
+        >
+          📌
+        </motion.button>
+      </motion.div>
 
       {/* Bottom spacer for safe area and nav */}
       <div className="h-8" />
