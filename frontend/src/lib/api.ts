@@ -1,14 +1,9 @@
-import { supabase } from './supabase';
+const AUTH_TOKEN = 'noirfactory2026';
 
 export interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
-}
-
-async function getAuthToken(): Promise<string | null> {
-  const session = await supabase.auth.getSession();
-  return session.data.session?.access_token || null;
 }
 
 function getCompanyId(): string {
@@ -19,17 +14,13 @@ export async function apiCall(
   endpoint: string,
   options: ApiOptions = {}
 ) {
-  const token = await getAuthToken();
   const companyId = getCompanyId();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Auth-Token': AUTH_TOKEN,
     ...options.headers,
   };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   if (companyId) {
     headers['X-Company-ID'] = companyId;
@@ -69,12 +60,14 @@ export function createContentJob(jobData: {
   job_type: string;
   target_platforms: string[];
   first_comment?: string;
-  avatar_id?: string;
+  avatar_name?: string;
 }) {
-  return apiCall('/content-jobs', {
-    method: 'POST',
-    body: jobData,
-  });
+  return apiCall('/content-jobs', { method: 'POST', body: jobData });
+}
+
+// Avatars
+export function getAvatars() {
+  return apiCall('/avatars');
 }
 
 export function getContentJob(jobId: string) {

@@ -1,125 +1,95 @@
 /**
  * Company Context Middleware
- * Ensures requests are scoped to a specific company
- * Reads company from X-Company-ID header or ?company_id query parameter
+ * Scopes requests to a specific company via X-Company-ID header
  */
 
 const { getSupabaseAdmin } = require('../db/supabase');
 const logger = require('../utils/logger');
 
+// Cache companies in memory (refresh every 5 min)
+let companiesCache = null;
+let cacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function loadCompanies() {
+  if (companiesCache && Date.now() - cacheTime < CACHE_TTL) return companiesCache;
+
+  try {
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      const { data } = await supabase.from('companies').select('id, slug, name').eq('is_active', true);
+      if (data) { companiesCache = data; cacheTime = Date.now(); return data; }
+    }
+  } catch (err) {
+    logger.warn('Could not load companies from Supabase, using defaults');
+  }
+
+  // Fallback hardcoded companies
+  return [
+    { id: '8b36e7e6-c942-41b1-81b7-a70204a37811', slug: 'rawfunds', name: 'RawFunds' },
+    { id: 'cc1c8956-efbf-48d5-969c-ca58022fb76c', slug: 'proxitap', name: 'Proxitap' }
+  ];
+}
+
 /**
- * Middleware that attaches company context to request
- * Verifies user has access to the specified company
+ * Require company context — reads X-Company-ID header
+ * Admin/password-gate users have access to all companies
  */
 async function requireCompanyContext(req, res, next) {
   try {
-    // Get company ID from header or query param
     const companyId = req.headers['x-company-id'] || req.query.company_id;
 
     if (!companyId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing company context (X-Company-ID header or ?company_id query param)'
-      });
+      return res.status(400).json({ success: false, error: 'Missing X-Company-ID header' });
     }
 
-    // If no user, reject (company context requires auth)
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    // Service accounts have access to all companies
-    if (req.user.isService) {
-      const supabase = getSupabaseAdmin();
-      const { data: company, error } = await supabase
-        .from('companies')
-        .select('id, slug, name')
-        .eq('id', companyId)
-        .single();
+    const companies = await loadCompanies();
+    const company = companies.find(c => c.id === companyId || c.slug === companyId);
 
-      if (error || !company) {
-        return res.status(404).json({
-          success: false,
-          error: 'Company not found'
-        });
-      }
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
 
+    // Admin and service users have access to all companies
+    if (req.user.isAdmin || req.user.isService) {
       req.company = company;
       return next();
     }
 
-    // Check if user has access to this company
+    // Regular users — check membership
     const userCompany = req.user.companies?.find(c => c.id === companyId);
     if (!userCompany) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied to this company'
-      });
+      return res.status(403).json({ success: false, error: 'Access denied to this company' });
     }
 
-    // Attach company to request
     req.company = userCompany;
     next();
   } catch (error) {
-    logger.error('Company context middleware error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
+    logger.error('Company context error:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
 /**
- * Optional company context - doesn't fail if missing
- * Useful for endpoints that can work with or without a specific company
+ * Optional company context
  */
 async function optionalCompanyContext(req, res, next) {
   try {
     const companyId = req.headers['x-company-id'] || req.query.company_id;
+    if (!companyId || !req.user) { req.company = null; return next(); }
 
-    // No company specified, continue
-    if (!companyId || !req.user) {
-      req.company = null;
-      return next();
-    }
-
-    // Service accounts have access to all companies
-    if (req.user.isService) {
-      const supabase = getSupabaseAdmin();
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id, slug, name')
-        .eq('id', companyId)
-        .single();
-
-      req.company = company || null;
-      return next();
-    }
-
-    // Check if user has access to this company
-    const userCompany = req.user.companies?.find(c => c.id === companyId);
-    req.company = userCompany || null;
-
-    // If user specified a company they don't have access to, reject
-    if (!req.company && companyId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied to this company'
-      });
-    }
-
+    const companies = await loadCompanies();
+    req.company = companies.find(c => c.id === companyId || c.slug === companyId) || null;
     next();
   } catch (error) {
-    logger.error('Optional company context middleware error:', error);
+    logger.error('Optional company context error:', error);
     req.company = null;
     next();
   }
 }
 
-module.exports = {
-  requireCompanyContext,
-  optionalCompanyContext
-};
+module.exports = { requireCompanyContext, optionalCompanyContext, loadCompanies };
