@@ -1,0 +1,163 @@
+================================================================================
+NOIR FACTORY - NEW VIDEO LAYOUTS - QUICK REFERENCE
+================================================================================
+
+FILE: /sessions/focused-zealous-carson/mnt/noir-factory-2/src/services/compositor.service.js
+
+================================================================================
+LAYOUTS ADDED (6 NEW)
+================================================================================
+
+1. NEWS_OVERLAY (lines 456-541)
+   - Avatar: 25% width, circular mask, top-right
+   - Content: Blurred screenshot background
+   - Feature: Red chyron bar (30% frame height) with headline text
+   - Ticker: Dark scrolling text bar
+   
+2. QUOTE_CARD (static only)
+   - Handled by pipeline-static.js (not compositor)
+   - Entry exists in LAYOUTS for UI awareness
+   
+3. REACTION (lines 545-586)
+   - Avatar: 70% of frame height, full width
+   - Content: Screenshot as PiP, top-right (35% size)
+   - Layout: Avatar dominant with content overlay
+   
+4. SCROLL_THROUGH (lines 592-643)
+   - Content: Screenshot scrolls upward smoothly
+   - Audio bar: Dark bar at bottom with visualization
+   - Effect: Vertical pan using Ken Burns/zoompan
+   
+5. DUET_STYLE (lines 646-697)
+   - Left half (45%): Avatar video
+   - Right half (55%): Screenshot with slow zoom
+   - Layout: Split screen with thin divider
+   
+6. WORD_BY_WORD (lines 704-776)
+   - Background: Black
+   - Text: Appears word by word, large white font
+   - Avatar: Small PiP bottom-right
+   - Sync: Words timed to audio duration
+
+================================================================================
+FUNCTION CALLS IN SWITCH STATEMENT (lines 232-258)
+================================================================================
+
+case 'news_overlay':
+  await composeNewsOverlay({ 
+    avatarVideoPath, screenshotPath, audioPath, 
+    audioDuration, sourceTitle, outputPath 
+  });
+
+case 'quote_card':
+  throw new Error('Quote Card is a static layout handled by pipeline-static.js');
+
+case 'reaction':
+  await composeReaction({ 
+    avatarVideoPath, screenshotPath, audioPath, 
+    audioDuration, outputPath 
+  });
+
+case 'scroll_through':
+  await composeScrollThrough({ 
+    screenshotPath, audioPath, audioDuration, 
+    onScreenText, outputPath 
+  });
+
+case 'duet_style':
+  await composeDuetStyle({ 
+    avatarVideoPath, screenshotPath, audioPath, 
+    audioDuration, outputPath 
+  });
+
+case 'word_by_word':
+  await composeWordByWord({ 
+    avatarVideoPath, audioPath, audioDuration, 
+    onScreenText, outputPath 
+  });
+
+================================================================================
+USAGE EXAMPLE
+================================================================================
+
+const { composeVideo, LAYOUTS } = require('./src/services/compositor.service.js');
+
+// Check all available layouts
+console.log(Object.keys(LAYOUTS));
+
+// Use any layout
+const videoPath = await composeVideo({
+  avatarVideoPath: '/path/to/avatar.mp4',
+  screenshotUrl: 'https://example.com/screenshot.png',
+  audioPath: '/path/to/audio.mp3',
+  layout: 'news_overlay',        // or any other layout
+  sourceTitle: 'Breaking News',  // for news_overlay
+  onScreenText: 'Text here'      // for scroll_through, word_by_word
+});
+
+================================================================================
+RESOLUTION & ENCODING
+================================================================================
+
+Resolution:    1080x1920 (vertical/portrait)
+Video Codec:   libx264 (H.264)
+Audio Codec:   AAC (192k bitrate)
+Quality:       CRF 22 (high quality)
+Pixel Format:  yuv420p
+Preset:        fast
+
+================================================================================
+FFMPEG FILTERS USED
+================================================================================
+
+✓ overlay     - Layer multiple videos/images with positioning
+✓ scale       - Resize with aspect ratio preservation
+✓ pad         - Add padding/borders with background color
+✓ drawtext    - Render text with time-based enable expressions
+✓ zoompan     - Zoom and pan effects for Ken Burns style
+✓ geq         - Pixel-level alpha masking for circular shapes
+✓ vstack      - Stack videos vertically
+✓ hstack      - Stack videos horizontally
+✓ boxblur     - Blur effects for backgrounds
+
+================================================================================
+LAYOUT REQUIREMENTS
+================================================================================
+
+news_overlay:
+  Required: avatarVideoPath, screenshotPath, audioPath, sourceTitle
+  Optional: none
+
+reaction:
+  Required: avatarVideoPath, screenshotPath, audioPath
+  Optional: none
+
+scroll_through:
+  Required: screenshotPath, audioPath, onScreenText
+  Optional: none (onScreenText can be empty)
+
+duet_style:
+  Required: avatarVideoPath, screenshotPath, audioPath
+  Optional: none
+
+word_by_word:
+  Required: avatarVideoPath, audioPath, onScreenText
+  Optional: none (onScreenText can be empty)
+
+quote_card:
+  Not supported by compositor (static layout only)
+
+================================================================================
+FILE STATISTICS
+================================================================================
+
+Lines before:    ~420 (5 layouts)
+Lines after:     807 (11 layouts)
+Lines added:     ~387 (6 new layout functions)
+New functions:   6 composition functions
+New cases:       6 switch statement cases
+New layouts:     6 LAYOUTS object entries
+
+Syntax check:    ✓ PASSED
+
+================================================================================

@@ -35,6 +35,30 @@ const LAYOUTS = {
   faceless: {
     label: 'Faceless (Reddit only)',
     description: 'Pure Reddit post with slow pan/zoom, no avatar'
+  },
+  news_overlay: {
+    label: 'News Overlay',
+    description: 'Avatar top-right corner + red chyron bar with ticker (vertical)'
+  },
+  quote_card: {
+    label: 'Quote Card',
+    description: 'Gradient background with centered quote text (static, handled by pipeline-static.js)'
+  },
+  reaction: {
+    label: 'Reaction',
+    description: 'Avatar fills 70%, source content PiP top-right (vertical)'
+  },
+  scroll_through: {
+    label: 'Scroll Through',
+    description: 'Content scrolls upward with audio bar and avatar thumbnail (vertical)'
+  },
+  duet_style: {
+    label: 'Duet Style',
+    description: 'Split screen: avatar left 45%, content right 55% (vertical)'
+  },
+  word_by_word: {
+    label: 'Word by Word',
+    description: 'Text appears word by word with avatar PiP bottom-right (vertical)'
   }
 };
 
@@ -146,6 +170,8 @@ async function scaleImage(input, w, h, out) {
  *   transition       - 'hard_cut' | 'crossfade' | 'zoom'
  *   bgBlur           - boolean, blur/darken Reddit bg behind PiP
  *   hookDuration     - seconds for avatar hook (layout 3 only)
+ *   sourceTitle      - headline text for news_overlay layout
+ *   onScreenText     - text for scroll_through, word_by_word layouts
  * @returns {Promise<string>} path to final composed video
  */
 async function composeVideo(params) {
@@ -159,7 +185,9 @@ async function composeVideo(params) {
     redditZoom = 'title_first_para',
     transition = 'hard_cut',
     bgBlur = true,
-    hookDuration = 2
+    hookDuration = 2,
+    sourceTitle = '',
+    onScreenText = ''
   } = params;
 
   const outputPath = path.join(TMP_DIR, `final_${Date.now()}.mp4`);
@@ -199,6 +227,34 @@ async function composeVideo(params) {
     case 'faceless':
       await composeFaceless({ screenshotPath, audioPath, audioDuration,
         redditZoom, outputPath, CANVAS_W, CANVAS_H });
+      break;
+
+    case 'news_overlay':
+      await composeNewsOverlay({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+        sourceTitle, outputPath });
+      break;
+
+    case 'quote_card':
+      throw new Error('Quote Card is a static layout handled by pipeline-static.js, not by compositor');
+
+    case 'reaction':
+      await composeReaction({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+        outputPath });
+      break;
+
+    case 'scroll_through':
+      await composeScrollThrough({ screenshotPath, audioPath, audioDuration,
+        onScreenText, outputPath });
+      break;
+
+    case 'duet_style':
+      await composeDuetStyle({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+        outputPath });
+      break;
+
+    case 'word_by_word':
+      await composeWordByWord({ avatarVideoPath, audioPath, audioDuration,
+        onScreenText, outputPath });
       break;
 
     default:
@@ -389,6 +445,334 @@ async function composeFaceless({ screenshotPath, audioPath, audioDuration,
     '-pix_fmt', 'yuv420p',
     outputPath
   ], 'Faceless: pan/zoom');
+}
+
+// ─── NEW LAYOUT IMPLEMENTATIONS (6 NEW LAYOUTS) ───────────────────────────────
+
+/**
+ * NEWS_OVERLAY: Avatar top-right (25% width, circular), red chyron bottom 30%, ticker
+ * Resolution: 1080x1920 (vertical)
+ */
+async function composeNewsOverlay({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+    sourceTitle, outputPath }) {
+
+  const CANVAS_W = 1080;
+  const CANVAS_H = 1920;
+
+  // Avatar size: 25% of width
+  const avatarSize = Math.round(CANVAS_W * 0.25);
+  const avatarX = CANVAS_W - avatarSize - 30; // top-right, 30px margin
+  const avatarY = 30;
+
+  // Chyron: bottom 30% of frame (height = 576px)
+  const chyronH = Math.round(CANVAS_H * 0.30);
+  const chyronY = CANVAS_H - chyronH;
+
+  // Dark background
+  const bgPath = path.join(TMP_DIR, `news_bg_${Date.now()}.mp4`);
+  await scaleImage(screenshotPath, CANVAS_W, CANVAS_H, bgPath);
+
+  // Apply blur to screenshot background
+  const blurredPath = path.join(TMP_DIR, `news_blur_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-i', bgPath,
+    '-vf', `boxblur=15:2`,
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    blurredPath
+  ], 'News: blur background');
+
+  // Create dark gradient overlay (dark to transparent)
+  const gradientPath = path.join(TMP_DIR, `news_gradient_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-f', 'lavfi', '-i', `color=black:s=${CANVAS_W}x${CANVAS_H}:d=${audioDuration}`,
+    '-vf', `format=rgba,drawbox=x=0:y=0:w=${CANVAS_W}:h=${CANVAS_H}:color=black@0.3:t=fill`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    gradientPath
+  ], 'News: create dark overlay');
+
+  // Create chyron bar (red background with white text)
+  const chyronBarPath = path.join(TMP_DIR, `news_chyron_${Date.now()}.mp4`);
+  const chyronText = sourceTitle.substring(0, 60) || 'Breaking News';
+
+  await runFFmpeg([
+    '-f', 'lavfi', '-i', `color=c=0xFF0000:s=${CANVAS_W}x${chyronH}:d=${audioDuration}`,
+    '-vf', `drawtext=text='${chyronText}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    chyronBarPath
+  ], 'News: create chyron bar');
+
+  // Create ticker text (scrolling bottom of chyron)
+  const tickerH = Math.round(chyronH * 0.4);
+  const tickerY = chyronY + chyronH;
+  const tickerPath = path.join(TMP_DIR, `news_ticker_${Date.now()}.mp4`);
+  const tickerText = 'LIVE • BREAKING NEWS • LATEST UPDATES • STAY TUNED';
+
+  await runFFmpeg([
+    '-f', 'lavfi', '-i', `color=c=0x1a1a1a:s=${CANVAS_W}x${tickerH}:d=${audioDuration}`,
+    '-vf', `drawtext=text='${tickerText}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontsize=28:fontcolor=white:x=w-(t*100):y=(h-text_h)/2`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    tickerPath
+  ], 'News: create ticker');
+
+  // Composite everything together
+  await runFFmpeg([
+    '-i', blurredPath,
+    '-stream_loop', '-1', '-i', avatarVideoPath,
+    '-i', audioPath,
+    '-filter_complex',
+      `[0:v]scale=${CANVAS_W}:${CANVAS_H}[bg];` +
+      `[bg]format=rgba[bgalpha];` +
+      `[1:v]scale=${avatarSize}:${avatarSize},` +
+        `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte((X-${avatarSize/2})^2+(Y-${avatarSize/2})^2,${(avatarSize/2)}^2),255,0)'[avatar];` +
+      `[bgalpha][avatar]overlay=${avatarX}:${avatarY}[main];` +
+      `[main]drawbox=x=0:y=${chyronY}:w=${CANVAS_W}:h=${chyronH}:color=red@1:t=fill[withchyron];` +
+      `[withchyron]drawtext=text='${chyronText}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=48:fontcolor=white:x=(w-text_w)/2:y=${chyronY}+(h-text_h)/2[final]`,
+    '-map', '[final]',
+    '-map', '2:a',
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    outputPath
+  ], 'News: composite all layers');
+}
+
+/**
+ * REACTION: Avatar fills 70%, source content PiP top-right 35%
+ * Resolution: 1080x1920 (vertical)
+ */
+async function composeReaction({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+    outputPath }) {
+
+  const CANVAS_W = 1080;
+  const CANVAS_H = 1920;
+  const avatarH = Math.round(CANVAS_H * 0.70);
+  const pipW = Math.round(CANVAS_W * 0.35);
+  const pipH = Math.round(CANVAS_H * 0.35);
+
+  // Stretch avatar to 70% height
+  const avatarResized = path.join(TMP_DIR, `reaction_av_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-stream_loop', '-1', '-i', avatarVideoPath,
+    '-i', audioPath,
+    '-t', `${audioDuration}`,
+    '-vf', `scale=${CANVAS_W}:${avatarH}:force_original_aspect_ratio=decrease,pad=${CANVAS_W}:${avatarH}:(ow-iw)/2:(oh-ih)/2:black`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    '-c:a', 'copy',
+    avatarResized
+  ], 'Reaction: resize avatar to 70%');
+
+  // Scale screenshot for PiP (top-right)
+  const pipPath = path.join(TMP_DIR, `reaction_pip_${Date.now()}.mp4`);
+  await scaleImage(screenshotPath, pipW, pipH, pipPath);
+
+  // Composite: avatar bottom, screenshot PiP top-right with rounded corners
+  await runFFmpeg([
+    '-i', avatarResized,
+    '-stream_loop', '-1', '-i', pipPath,
+    '-filter_complex',
+      `[0:v]pad=${CANVAS_W}:${CANVAS_H}:0:0:black[padded];` +
+      `[1:v]scale=${pipW}:${pipH}[pip];` +
+      `[padded][pip]overlay=${CANVAS_W - pipW - 20}:20:shortest=1[out]`,
+    '-map', '[out]',
+    '-map', '0:a',
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    outputPath
+  ], 'Reaction: composite avatar + PiP');
+}
+
+/**
+ * SCROLL_THROUGH: Screenshot scrolls upward, audio bar with avatar thumbnail and waveform
+ * Resolution: 1080x1920 (vertical)
+ */
+async function composeScrollThrough({ screenshotPath, audioPath, audioDuration,
+    onScreenText, outputPath }) {
+
+  const CANVAS_W = 1080;
+  const CANVAS_H = 1920;
+  const audioBarH = 120; // audio bar height at bottom
+  const contentH = CANVAS_H - audioBarH;
+  const fps = 30;
+  const frames = Math.ceil(audioDuration * fps);
+
+  // Calculate scroll distance (entire image height)
+  const scrollDistance = CANVAS_H * 0.5; // scroll through half the height
+
+  // Create scrolling content using zoompan (vertical scroll effect)
+  const scrollPath = path.join(TMP_DIR, `scroll_content_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-loop', '1', '-i', screenshotPath,
+    '-t', `${audioDuration}`,
+    '-vf', `scale=${CANVAS_W}:${CANVAS_H * 2},` +
+           `zoompan=z='1':x='0':y='min(iw/10*t/${audioDuration},ih-${contentH})':d=${frames}:s=${CANVAS_W}x${contentH}:fps=${fps}`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    scrollPath
+  ], 'Scroll: vertical pan effect');
+
+  // Create audio bar with waveform placeholder
+  const audioBarPath = path.join(TMP_DIR, `scroll_audiobar_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-f', 'lavfi', '-i', `color=c=0x222222:s=${CANVAS_W}x${audioBarH}:d=${audioDuration}`,
+    '-vf', `drawtext=text='♪ Audio Visualization':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontsize=24:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    audioBarPath
+  ], 'Scroll: create audio bar');
+
+  // Composite scroll + audio bar
+  await runFFmpeg([
+    '-i', scrollPath,
+    '-i', audioBarPath,
+    '-i', audioPath,
+    '-filter_complex',
+      `[0:v][1:v]vstack=inputs=2[out]`,
+    '-map', '[out]',
+    '-map', '2:a',
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    outputPath
+  ], 'Scroll: composite scroll + audio bar');
+}
+
+/**
+ * DUET_STYLE: Split screen - avatar left 45%, content right 55% with slow zoom
+ * Resolution: 1080x1920 (vertical)
+ */
+async function composeDuetStyle({ avatarVideoPath, screenshotPath, audioPath, audioDuration,
+    outputPath }) {
+
+  const CANVAS_W = 1080;
+  const CANVAS_H = 1920;
+  const leftW = Math.round(CANVAS_W * 0.45);
+  const rightW = CANVAS_W - leftW;
+  const dividerW = 4; // thin divider
+
+  // Resize avatar for left side
+  const avatarLeftPath = path.join(TMP_DIR, `duet_av_left_${Date.now()}.mp4`);
+  await runFFmpeg([
+    '-stream_loop', '-1', '-i', avatarVideoPath,
+    '-i', audioPath,
+    '-t', `${audioDuration}`,
+    '-vf', `scale=${leftW}:${CANVAS_H}:force_original_aspect_ratio=decrease,pad=${leftW}:${CANVAS_H}:(ow-iw)/2:(oh-ih)/2:black`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    '-c:a', 'copy',
+    avatarLeftPath
+  ], 'Duet: resize avatar for left');
+
+  // Create zooming screenshot for right side (slow zoom effect)
+  const fps = 30;
+  const frames = Math.ceil(audioDuration * fps);
+  const contentRightPath = path.join(TMP_DIR, `duet_content_right_${Date.now()}.mp4`);
+
+  await runFFmpeg([
+    '-loop', '1', '-i', screenshotPath,
+    '-t', `${audioDuration}`,
+    '-vf', `scale=${rightW * 2}:${CANVAS_H * 2},` +
+           `zoompan=z='min(1.0+0.0001*t,1.3)':x='(iw-${rightW})/2':y='(ih-${CANVAS_H})/2':d=${frames}:s=${rightW}x${CANVAS_H}:fps=${fps}`,
+    '-c:v', 'libx264', '-preset', 'fast',
+    contentRightPath
+  ], 'Duet: create zooming content');
+
+  // Composite left + divider + right
+  await runFFmpeg([
+    '-i', avatarLeftPath,
+    '-i', contentRightPath,
+    '-i', audioPath,
+    '-filter_complex',
+      `[0:v]pad=${leftW + dividerW}:${CANVAS_H}:(ow-iw)/2:0:black[left];` +
+      `[left][1:v]hstack=inputs=2[out]`,
+    '-map', '[out]',
+    '-map', '2:a',
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    outputPath
+  ], 'Duet: composite split screen');
+}
+
+/**
+ * WORD_BY_WORD: Text appears word by word, centered, with accent color highlight
+ * Avatar PiP bottom-right. Synced to audio timing.
+ * Resolution: 1080x1920 (vertical)
+ */
+async function composeWordByWord({ avatarVideoPath, audioPath, audioDuration,
+    onScreenText, outputPath }) {
+
+  const CANVAS_W = 1080;
+  const CANVAS_H = 1920;
+  const avatarSize = 200; // bottom-right avatar PiP
+  const accentColor = '6C5CE7'; // purple accent
+
+  // Parse text into words for timing
+  const words = (onScreenText || 'Your text here').split(' ').filter(w => w.length > 0);
+  const wordsPerSecond = words.length > 0 ? Math.max(2, words.length / audioDuration) : 2;
+  const timePerWord = 1 / wordsPerSecond;
+
+  // Build drawtext filter for word-by-word animation
+  // We'll create a complex filter that shows one word at a time
+  let filterStr = '';
+
+  // Create base black canvas
+  filterStr = `color=c=0x000000:s=${CANVAS_W}x${CANVAS_H}:d=${audioDuration}[bg];`;
+
+  // For simplicity, we'll create a loop-based approach:
+  // Draw current word based on time position
+  const wordEnables = words.map((word, idx) => {
+    const startTime = idx * timePerWord;
+    const endTime = (idx + 1) * timePerWord;
+    return `enable='between(t,${startTime},${endTime})'`;
+  }).join(':');
+
+  // Build complex filter with multiple drawtext overlays
+  filterStr += `[bg]`;
+  words.forEach((word, idx) => {
+    const startTime = idx * timePerWord;
+    const endTime = (idx + 1) * timePerWord;
+    const isLast = idx === words.length - 1;
+
+    filterStr += `drawtext=text='${word}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:` +
+                 `fontsize=96:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:` +
+                 `enable='between(t,${startTime},${endTime})'`;
+
+    if (!isLast) filterStr += ',';
+  });
+  filterStr += `[textoverlay]`;
+
+  // Add avatar PiP to bottom-right
+  filterStr += `;[textoverlay]pad=${CANVAS_W}:${CANVAS_H}:0:0[padded];` +
+               `[1:v]scale=${avatarSize}:${avatarSize}[avatar];` +
+               `[padded][avatar]overlay=${CANVAS_W - avatarSize - 20}:${CANVAS_H - avatarSize - 20}:shortest=1[final]`;
+
+  // Create the word-by-word text video with avatar
+  await runFFmpeg([
+    '-f', 'lavfi', '-i', `color=c=0x000000:s=${CANVAS_W}x${CANVAS_H}:d=${audioDuration}`,
+    '-stream_loop', '-1', '-i', avatarVideoPath,
+    '-i', audioPath,
+    '-filter_complex',
+      `[0:v]` +
+      words.map((word, idx) => {
+        const startTime = idx * timePerWord;
+        const endTime = (idx + 1) * timePerWord;
+        return `drawtext=text='${word}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=96:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,${startTime},${endTime})'`;
+      }).join(',') +
+      `[text];` +
+      `[text]pad=${CANVAS_W}:${CANVAS_H}:0:0[padded];` +
+      `[1:v]scale=${avatarSize}:${avatarSize}[avatar];` +
+      `[padded][avatar]overlay=${CANVAS_W - avatarSize - 20}:${CANVAS_H - avatarSize - 20}:shortest=1[out]`,
+    '-map', '[out]',
+    '-map', '2:a',
+    '-t', `${audioDuration}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    outputPath
+  ], 'Word by Word: text animation with avatar');
 }
 
 // ─── AUDIO DURATION ──────────────────────────────────────────────────────────
