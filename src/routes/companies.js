@@ -15,6 +15,21 @@ const logger = require('../utils/logger');
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    // Admin users get all companies
+    if (req.user.isAdmin || req.user.isService) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data } = await supabase.from('companies').select('id, slug, name, display_name, logo_url, is_active').eq('is_active', true);
+        if (data && data.length > 0) {
+          return res.json({ success: true, companies: data });
+        }
+      }
+      // Fallback hardcoded
+      return res.json({ success: true, companies: [
+        { id: '8b36e7e6-c942-41b1-81b7-a70204a37811', slug: 'rawfunds', name: 'RawFunds' },
+        { id: 'cc1c8956-efbf-48d5-969c-ca58022fb76c', slug: 'proxitap', name: 'Proxitap' }
+      ]});
+    }
     res.json({
       success: true,
       companies: req.user.companies || []
