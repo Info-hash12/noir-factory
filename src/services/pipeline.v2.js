@@ -16,6 +16,7 @@ const {
 } = require('./segmind.service');
 const { composeVideo } = require('./compositor.service');
 const { publishVideo } = require('./publer.service');
+const { generateStaticPost, generateCarousel, generateStory } = require('./pipeline-static');
 const logger = require('../utils/logger');
 const fs = require('fs');
 
@@ -53,6 +54,62 @@ async function runPipeline(job, overrides = {}) {
 
   trackJob(jobId);  // Register so graceful shutdown waits for us
   logger.info(`[Pipeline] Starting job ${jobId}: ${job.source_title}`);
+
+  // ─── ROUTE BY JOB TYPE ────────────────────────────────────────────────────
+  const jobType = job.job_type || job.type || 'video_with_avatar';
+
+  if (jobType === 'static_post') {
+    try {
+      const result = await generateStaticPost(job, { id: job.company_id });
+      untrackJob(jobId);
+      return { success: true, jobId, ...result };
+    } catch (error) {
+      logger.error(`[Pipeline] Static post job ${jobId} failed: ${error.message}`);
+      await updateJob({
+        publish_status: 'failed',
+        error_message: error.message,
+        processing_step: 'error'
+      });
+      untrackJob(jobId);
+      throw error;
+    }
+  }
+
+  if (jobType === 'carousel') {
+    try {
+      const result = await generateCarousel(job, { id: job.company_id });
+      untrackJob(jobId);
+      return { success: true, jobId, jobType: 'carousel', ...result };
+    } catch (error) {
+      logger.error(`[Pipeline] Carousel job ${jobId} failed: ${error.message}`);
+      await updateJob({
+        publish_status: 'failed',
+        error_message: error.message,
+        processing_step: 'error'
+      });
+      untrackJob(jobId);
+      throw error;
+    }
+  }
+
+  if (jobType === 'story') {
+    try {
+      const result = await generateStory(job, { id: job.company_id });
+      untrackJob(jobId);
+      return { success: true, jobId, jobType: 'story', ...result };
+    } catch (error) {
+      logger.error(`[Pipeline] Story job ${jobId} failed: ${error.message}`);
+      await updateJob({
+        publish_status: 'failed',
+        error_message: error.message,
+        processing_step: 'error'
+      });
+      untrackJob(jobId);
+      throw error;
+    }
+  }
+
+  // Default to video pipeline for video_with_avatar and reel types
 
   try {
     // ─── STEP 1: Screenshot ────────────────────────────────────────────────
