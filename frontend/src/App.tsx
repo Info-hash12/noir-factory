@@ -9,6 +9,7 @@ import { FeedPage } from './pages/FeedPage';
 import { QueuePage } from './pages/QueuePage';
 import { BotPage } from './pages/BotPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TrendingPage } from './pages/TrendingPage';
 
 export function App() {
   const initialize = useAuthStore((state) => state.initialize);
@@ -35,6 +36,7 @@ export function App() {
         >
           <Route path="/" element={<FeedPage />} />
           <Route path="/queue" element={<QueuePage />} />
+          <Route path="/trending" element={<TrendingPage />} />
           <Route path="/bot" element={<BotPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -50,6 +50,7 @@ export interface ContentJob {
   layout_type?: string;
   is_evergreen?: boolean;
   evergreen_interval_days?: number;
+  queue_priority?: number;
 }
 
 export interface EngagementTemplate {
@@ -74,4 +75,18 @@ export interface CompanyPrompts {
   hashtags?: string;
   caption?: string;
   first_comment?: string;
+}
+
+export interface TrendingItem {
+  id: string;
+  platform: 'reddit' | 'twitter' | 'tiktok' | 'instagram';
+  topic: string;
+  hashtag?: string;
+  score: number;
+  volume: number;
+  timestamp: string;
+}
+
+export interface TrendingItemWithTime extends TrendingItem {
+  timeStarted: string;
 }

@@ -20,6 +20,7 @@ const feedsRoutes = require('./routes/feeds');
 const contentItemsRoutes = require('./routes/content-items');
 const contentJobsRoutes = require('./routes/content-jobs');
 const engagementRoutes = require('./routes/engagement');
+const trendingRoutes = require('./routes/trending');
 const logger = require('./utils/logger');
 
 const app = express();
@@ -117,6 +118,7 @@ app.use('/api/feeds', feedsRoutes);
 app.use('/api/content-items', contentItemsRoutes);
 app.use('/api/content-jobs', contentJobsRoutes);
 app.use('/api/engagement', engagementRoutes);
+app.use('/api/trending', trendingRoutes);
 
 app.use('/api', apiRoutes); // Mount general API routes LAST to avoid conflicts
 

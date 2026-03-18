@@ -231,6 +231,93 @@ router.patch('/:id', async (req, res) => {
 });
 
 /**
+ * POST /api/content-jobs/reorder
+ * Reorder queued jobs by priority
+ */
+router.post('/reorder', async (req, res) => {
+  try {
+    const { 'x-company-id': companyId } = req.headers;
+    const { job_ids } = req.body;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'X-Company-ID header is required'
+      });
+    }
+
+    if (!Array.isArray(job_ids) || job_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'job_ids array is required'
+      });
+    }
+
+    const client = getSupabaseAdmin();
+
+    // Update queue_priority for each job in the provided order
+    const updates = job_ids.map((jobId, index) => ({
+      id: jobId,
+      queue_priority: index + 1,
+      updated_at: new Date().toISOString()
+    }));
+
+    // Update all jobs in parallel
+    const updatePromises = updates.map(update =>
+      client
+        .from('content_jobs')
+        .update({
+          queue_priority: update.queue_priority,
+          updated_at: update.updated_at
+        })
+        .eq('id', update.id)
+        .eq('company_id', companyId)
+    );
+
+    const results = await Promise.all(updatePromises);
+
+    // Check for any errors
+    const hasError = results.some(result => result.error);
+    if (hasError) {
+      logger.error('Failed to update some jobs:', results);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update all jobs'
+      });
+    }
+
+    // Fetch updated jobs
+    const { data, error } = await client
+      .from('content_jobs')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('id', job_ids)
+      .order('queue_priority', { ascending: true });
+
+    if (error) {
+      logger.error('Failed to fetch updated jobs:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch updated jobs'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: data || [],
+      message: 'Jobs reordered successfully'
+    });
+
+  } catch (error) {
+    logger.error('POST /content-jobs/reorder error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/content-jobs/:id/retry
  * Retry a failed content job
  */

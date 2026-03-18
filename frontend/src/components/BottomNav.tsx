@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Newspaper, Layers2, Sparkles, Settings } from 'lucide-react';
+import { Newspaper, Layers2, Flame, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface NavItem {
@@ -11,7 +11,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Feed', path: '/', icon: <Newspaper className="w-6 h-6" /> },
   { label: 'Queue', path: '/queue', icon: <Layers2 className="w-6 h-6" /> },
-  { label: 'Bot', path: '/bot', icon: <Sparkles className="w-6 h-6" /> },
+  { label: 'Trending', path: '/trending', icon: <Flame className="w-6 h-6" /> },
   { label: 'Settings', path: '/settings', icon: <Settings className="w-6 h-6" /> },
 ];
 

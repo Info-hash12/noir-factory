@@ -92,6 +92,13 @@ export function retryContentJob(jobId: string) {
   return apiCall(`/content-jobs/${jobId}/retry`, { method: 'POST' });
 }
 
+export function reorderContentJobs(jobIds: string[]) {
+  return apiCall('/content-jobs/reorder', {
+    method: 'POST',
+    body: { job_ids: jobIds },
+  });
+}
+
 // Feeds
 export function getFeeds() {
   return apiCall('/feeds');
@@ -192,4 +199,10 @@ export function captureUrl(url: string) {
 // User
 export function getCurrentUser() {
   return apiCall('/auth/me');
+}
+
+// Trending
+export function getTrending(platform?: string) {
+  const url = platform ? `/trending?platform=${platform}` : '/trending';
+  return apiCall(url);
 }
