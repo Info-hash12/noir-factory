@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { motion } from 'framer-motion';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { user, initialize } = useAuthStore();
-  const [isLoading, setIsLoading] = useState(false);
+  const { user, initialize, login, error } = useAuthStore();
+  const [password, setPassword] = useState('');
+  const [shake, setShake] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -19,19 +19,13 @@ export function LoginPage() {
     }
   }, [user, navigate]);
 
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error('Sign in error:', error);
-      setIsLoading(false);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const success = login(password);
+    if (!success) {
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      setPassword('');
     }
   };
 
@@ -40,38 +34,23 @@ export function LoginPage() {
       {/* Animated gradient orbs */}
       <motion.div
         className="absolute top-20 right-10 w-72 h-72 bg-accent-primary rounded-full mix-blend-multiply filter blur-3xl opacity-20 pointer-events-none"
-        animate={{
-          x: [0, 100, 0],
-          y: [0, -100, 0],
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ x: [0, 100, 0], y: [0, -100, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
         className="absolute -bottom-8 -left-8 w-72 h-72 bg-accent-danger rounded-full mix-blend-multiply filter blur-3xl opacity-10 pointer-events-none"
-        animate={{
-          x: [0, -100, 0],
-          y: [0, 100, 0],
-        }}
-        transition={{
-          duration: 10,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ x: [0, -100, 0], y: [0, 100, 0] }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       />
 
       <div className="w-full max-w-md space-y-8 relative z-10">
-        {/* Logo Section */}
+        {/* Logo */}
         <motion.div
           className="flex flex-col items-center gap-6"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          {/* Logo circle */}
           <motion.div
             className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent-primary to-accent-danger flex items-center justify-center shadow-2xl"
             whileHover={{ scale: 1.05 }}
@@ -80,7 +59,6 @@ export function LoginPage() {
             <span className="text-4xl font-black text-noir-bg">✦</span>
           </motion.div>
 
-          {/* Branding */}
           <div className="text-center">
             <h1 className="text-5xl font-black tracking-tight text-text-primary mb-2">
               NOIR FACTORY
@@ -89,47 +67,54 @@ export function LoginPage() {
               Content Production Engine
             </p>
           </div>
-
-          <p className="text-sm text-text-secondary text-center max-w-xs">
-            Automate your social media content with AI-powered creation and distribution
-          </p>
         </motion.div>
 
-        {/* Sign In Button */}
-        <motion.button
-          onClick={handleGoogleSignIn}
-          disabled={isLoading}
-          className="w-full h-14 rounded-xl bg-white text-noir-bg font-semibold text-base flex items-center justify-center gap-3 hover:shadow-lg hover:shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+        {/* Password Form */}
+        <motion.form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          animate={shake ? { x: [-12, 12, -8, 8, -4, 4, 0] } : {}}
+          transition={{ duration: 0.4 }}
         >
-          {isLoading ? (
-            <motion.div
-              className="w-5 h-5 border-2 border-noir-bg border-t-accent-primary rounded-full"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity }}
+          <div className="relative">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              autoFocus
+              className="w-full h-14 rounded-xl bg-noir-card border border-noir-border px-5 text-text-primary text-base placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/50 transition-all duration-200"
             />
-          ) : (
-            <>
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032 c0-3.331,2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.461,2.268,15.365,1.456,12.545,1.456 c-6.321,0-11.444,5.124-11.444,11.444c0,6.32,5.124,11.444,11.444,11.444c6.587,0,11.444-5.144,11.444-11.444 c0-0.755-0.088-1.5-0.258-2.221H12.545z"
-                />
-              </svg>
-              Sign in with Google
-            </>
-          )}
-        </motion.button>
+            {error && (
+              <motion.p
+                className="absolute -bottom-6 left-1 text-sm text-accent-danger"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                {error}
+              </motion.p>
+            )}
+          </div>
 
-        {/* Footer */}
+          <motion.button
+            type="submit"
+            disabled={!password}
+            className="w-full h-14 rounded-xl bg-gradient-to-r from-accent-primary to-purple-500 text-white font-semibold text-base flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-accent-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Unlock
+          </motion.button>
+        </motion.form>
+
         <motion.p
           className="text-center text-xs text-text-muted"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.6 }}
         >
-          Secure authentication powered by Supabase
+          Authorized access only
         </motion.p>
       </div>
     </div>

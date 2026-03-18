@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import { supabase, getSession } from '../lib/supabase';
 import type { User } from '../types';
+
+const STORAGE_KEY = 'noir_authenticated';
+const PASSWORD = 'noirfactory2026';
 
 interface AuthState {
   user: User | null;
@@ -9,6 +11,7 @@ interface AuthState {
   initialized: boolean;
   initialize: () => Promise<void>;
   setUser: (user: User | null) => void;
+  login: (password: string) => boolean;
   logout: () => Promise<void>;
 }
 
@@ -19,29 +22,39 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialized: false,
 
   initialize: async () => {
-    try {
-      const session = await getSession();
-      if (session?.user) {
-        set({
-          user: {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.name,
-            avatar_url: session.user.user_metadata?.avatar_url,
-          },
-          initialized: true,
-          loading: false,
-        });
-      } else {
-        set({ initialized: true, loading: false });
-      }
-    } catch (error) {
+    const isAuth = localStorage.getItem(STORAGE_KEY);
+    if (isAuth === 'true') {
       set({
-        error: error instanceof Error ? error.message : 'Failed to initialize auth',
+        user: {
+          id: 'admin',
+          email: 'info@rawfunds.com',
+          name: 'RAWFUNDS',
+          avatar_url: undefined,
+        },
         initialized: true,
         loading: false,
       });
+    } else {
+      set({ initialized: true, loading: false });
     }
+  },
+
+  login: (password: string) => {
+    if (password === PASSWORD) {
+      localStorage.setItem(STORAGE_KEY, 'true');
+      set({
+        user: {
+          id: 'admin',
+          email: 'info@rawfunds.com',
+          name: 'RAWFUNDS',
+          avatar_url: undefined,
+        },
+        error: null,
+      });
+      return true;
+    }
+    set({ error: 'Wrong password' });
+    return false;
   },
 
   setUser: (user) => {
@@ -49,14 +62,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    try {
-      await supabase.auth.signOut();
-      set({ user: null });
-      localStorage.removeItem('noir_company_id');
-    } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : 'Failed to logout',
-      });
-    }
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('noir_company_id');
+    set({ user: null });
   },
 }));
