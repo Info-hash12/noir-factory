@@ -20,6 +20,9 @@ const feedsRoutes = require('./routes/feeds');
 const contentItemsRoutes = require('./routes/content-items');
 const contentJobsRoutes = require('./routes/content-jobs');
 const engagementRoutes = require('./routes/engagement');
+const engagementBotRoutes = require('./routes/engagement-bot');
+const schedulerRoutes = require('./routes/scheduler');
+const metaIntegrationsRoutes = require('./routes/meta-integrations');
 const trendingRoutes = require('./routes/trending');
 const analyticsRoutes = require('./routes/analytics');
 const logger = require('./utils/logger');
@@ -119,6 +122,9 @@ app.use('/api/feeds', feedsRoutes);
 app.use('/api/content-items', contentItemsRoutes);
 app.use('/api/content-jobs', contentJobsRoutes);
 app.use('/api/engagement', engagementRoutes);
+app.use('/api/engagement', engagementBotRoutes); // Engagement bot routes (shares prefix)
+app.use('/api/schedule', schedulerRoutes); // Smart scheduling
+app.use('/api/integrations/meta', metaIntegrationsRoutes); // Meta Business Suite
 app.use('/api/trending', trendingRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
@@ -186,7 +192,17 @@ app.use((err, req, res, next) => {
 async function initializeApp() {
   try {
     logger.info('⏳ Initializing Noir Factory services...');
-    
+
+    // Start Engagement Bot if configured
+    try {
+      const { startEngagementBot } = require('./jobs/engagementBot');
+      const botInterval = process.env.ENGAGEMENT_BOT_INTERVAL || '*/5 * * * *'; // Every 5 minutes by default
+      startEngagementBot(botInterval);
+      logger.info('✅ Engagement bot started');
+    } catch (botError) {
+      logger.warn('⚠️  Engagement bot not started:', botError.message);
+    }
+
     // Start Telegram bot if configured
     try {
       const { startBot } = require('./services/telegram-bot');
