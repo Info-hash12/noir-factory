@@ -17,12 +17,16 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     // Admin users get all companies
     if (req.user.isAdmin || req.user.isService) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data } = await supabase.from('companies').select('id, slug, name, display_name, logo_url, is_active').eq('is_active', true);
-        if (data && data.length > 0) {
-          return res.json({ success: true, companies: data });
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase && typeof supabase.from === 'function') {
+          const result = await supabase.from('companies').select('id, slug, name, display_name, logo_url, is_active');
+          if (result && result.data && result.data.length > 0) {
+            return res.json({ success: true, companies: result.data.filter(c => c.is_active !== false) });
+          }
         }
+      } catch (e) {
+        logger.warn('Supabase companies query failed, using fallback:', e.message);
       }
       // Fallback hardcoded
       return res.json({ success: true, companies: [
