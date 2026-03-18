@@ -1,0 +1,1 @@
+const logger = require("../utils/logger"); async function captureScreenshot(url) { logger.info(`TEST MODE: Screenshot for ${url}`); return "https://via.placeholder.com/1080x1920.png?text=Reddit+9:16+Screenshot"; } module.exports = { captureScreenshot };

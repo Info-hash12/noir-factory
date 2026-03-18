@@ -1,0 +1,54 @@
+# Noir Factory - Docker Ignore File
+
+# Node modules
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temp files
+temp/
+*.tmp
+*.log
+
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Tests
+*.test.js
+test-*.js
+coverage/
+.nyc_output/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Build artifacts
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Workers (deployed separately)
+workers/
+
+# Config files (use secrets/env vars instead)
+config/character-profiles/*
+!config/character-profiles/README.md

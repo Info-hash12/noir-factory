@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: noir-factory
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: CORS_ORIGINS
+        value: https://noir-factory-production-control-230432435181.us-west1.run.app
+      - key: AIRTABLE_TOKEN
+        sync: false
+      - key: HCTI_USER_ID
+        sync: false
+      - key: HCTI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SEGMIND_API_KEY
+        sync: false
+      - key: PUBLER_API_KEY
+        sync: false
+      - key: PUBLER_WORKSPACE_ID
+        sync: false
+      - key: PUBLER_ACCOUNT_ID
+        sync: false
+      - key: REDDIT_RSS_URL
+        sync: false
+    healthCheckPath: /healthz
+    autoDeploy: true

@@ -1,0 +1,118 @@
+# Noir Factory Configuration Defaults
+
+# TTS Service Configuration
+tts:
+  service_url: "http://localhost:5000"  # Qwen3-TTS Docker container
+  timeout: 120000  # 2 minutes
+  sample_rate: 22050
+  format: "wav"
+
+# Character Configuration
+characters:
+  bianca:
+    id: "bianca"
+    name: "Bianca"
+    profile_path: "config/character-profiles/bianca"
+    reference_audio: "reference_audio.wav"
+    voice_settings:
+      speed: 1.0
+      temperature: 0.7
+  larry:
+    id: "larry"
+    name: "Larry"
+    profile_path: "config/character-profiles/larry"
+    reference_audio: "reference_audio.wav"
+    voice_settings:
+      speed: 1.0
+      temperature: 0.7
+  malik:
+    id: "malik"
+    name: "Malik"
+    profile_path: "config/character-profiles/malik"
+    reference_audio: "reference_audio.wav"
+    voice_settings:
+      speed: 1.0
+      temperature: 0.7
+
+# Video Generation Configuration
+# InfiniteTalk on Segmind (replaces SadTalker) — Higgsfield Cinema Studio quality
+video:
+  runpod_worker_url: "https://your-runpod-endpoint.runsync.api"
+  poll_interval: 5000  # 5 seconds
+  video_gen_timeout: 300000  # 5 minutes (Wan2.2)
+  infinitetalk_timeout: 900000  # 15 minutes (InfiniteTalk streaming for up to 90s)
+  wan2_settings:
+    num_frames: 120  # 5 seconds at 24fps
+    fps: 24
+  infinitetalk_settings:
+    resolution: "720p"        # Cinema-quality resolution
+    fps: 25                   # Cinematic frame rate
+    enhance_prompt: true      # Natural, non-robotic motion
+    seed: 42424242            # Reproducible results
+
+# Face Restoration Configuration (CodeFormer on Segmind)
+# "Secret sauce" — sharpens eyes and teeth for high-end look
+face_restoration:
+  enable_pre_restore: true    # Restore avatar image before InfiniteTalk
+  enable_video_restore: false # Frame-by-frame video restoration (expensive at scale)
+  fidelity: 0.7              # 0-1, higher = sharper but less identity preservation
+  concurrency: 5             # Parallel CodeFormer API calls for video restoration
+  frame_skip: 1              # 1 = every frame, 3 = every 3rd (reduces cost 3x)
+
+# Video Compositor Configuration
+compositor:
+  engine: "internal"  # 'internal' (FFmpeg) or 'shotstack'
+  default_mode: "split_screen_bottom_content"  # or "greenscreen_overlay"
+  output_width: 1080
+  output_height: 1920
+  split_screen:
+    avatar_width: 540  # Left half
+    screenshot_width: 540  # Right half
+  greenscreen:
+    color: "0x00FF00"  # Green color
+    similarity: 0.3
+    blend: 0.1
+    avatar_position: "bottom-center"
+    avatar_scale: 0.5  # 50% of height
+  ffmpeg:
+    preset: "medium"  # fast, medium, slow
+    crf: 23  # Quality (18-28, lower is better)
+    fps: 24
+    audio_bitrate: "128k"
+
+# Screenshot Service Configuration
+screenshot:
+  viewport_width: 1080
+  viewport_height: 1920
+  format: "png"
+  delay: 3
+  block_ads: true
+  block_cookie_banners: true
+  ignore_host_errors: true
+
+# Script Generation Configuration
+script:
+  default_duration: 30
+  max_duration: 60
+  model: "anthropic/claude-3.5-sonnet"
+  temperature: 0.7
+  max_tokens: 1500
+
+# Processing Configuration
+processing:
+  retry_attempts: 3
+  retry_delay_base: 2000  # milliseconds
+  temp_directory: "temp"
+
+# Google Drive Configuration
+drive:
+  renders_path: "RawFunds Media/Renders"
+  audio_folder: "audio"
+  avatar_folder: "avatar"
+  video_folder: "video"
+
+# Logging Configuration
+logging:
+  level: "info"
+  format: "json"
+  timestamp: true
