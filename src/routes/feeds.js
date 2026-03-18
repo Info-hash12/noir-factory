@@ -39,7 +39,7 @@ router.post('/', requireAuth, requireCompanyContext, async (req, res) => {
     if (!name || !url) return res.status(400).json({ success: false, error: 'Name and URL required' });
 
     // Validate feed type
-    const validTypes = ['generic', 'rss', 'reddit', 'twitter', 'instagram', 'tiktok', 'linkedin', 'competitor'];
+    const validTypes = ['generic', 'rss', 'reddit', 'twitter', 'x_twitter', 'instagram', 'tiktok', 'linkedin', 'competitor', 'news', 'youtube'];
     const feedType = type || 'generic';
     if (!validTypes.includes(feedType)) {
       return res.status(400).json({
@@ -90,7 +90,7 @@ router.put('/:id', requireAuth, requireCompanyContext, async (req, res) => {
     if (url) updates.feed_url = url;
     if (type) {
       // Validate feed type
-      const validTypes = ['generic', 'rss', 'reddit', 'twitter', 'instagram', 'tiktok', 'linkedin', 'competitor'];
+      const validTypes = ['generic', 'rss', 'reddit', 'twitter', 'x_twitter', 'instagram', 'tiktok', 'linkedin', 'competitor', 'news', 'youtube'];
       if (!validTypes.includes(type)) {
         return res.status(400).json({
           success: false,
