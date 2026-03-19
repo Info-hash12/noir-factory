@@ -93,7 +93,7 @@ router.get('/:platform', (req, res) => {
     }
 
     // Build callback URL
-    const callbackUrl = `${process.env.APP_URL || 'http://localhost:8080'}/api/connect/${platform}/callback`;
+    const callbackUrl = `${process.env.APP_URL || 'https://noir-factory.onrender.com'}/api/connect/${platform}/callback`;
 
     // Get authorization URL
     const authUrl = oauthService.getAuthUrl(platform, companyId, callbackUrl);
