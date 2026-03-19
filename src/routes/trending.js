@@ -6,7 +6,9 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
-const db = require('../db');
+const { getSupabaseAdmin } = require('../db/supabase');
+const { requireAuth } = require('../middleware/auth');
+const { requireCompanyContext } = require('../middleware/companyContext');
 
 // Keyword-based content templates for search simulation
 const KEYWORD_CONTENT_MAP = {
@@ -302,61 +304,35 @@ router.get('/', async (req, res) => {
  * Save a trending item to content_items table
  * Body: { item_id, title, excerpt, url, source, platform, image_url }
  */
-router.post('/save', async (req, res) => {
+router.post('/save', requireAuth, async (req, res) => {
   try {
     const { item_id, title, excerpt, url, source, platform, image_url } = req.body;
     const companyId = req.headers['x-company-id'];
 
     if (!companyId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Company ID required'
-      });
+      return res.status(401).json({ success: false, error: 'Company ID required' });
+    }
+    if (!title || !url || !platform) {
+      return res.status(400).json({ success: false, error: 'Missing required fields: title, url, platform' });
     }
 
-    if (!title || !excerpt || !url || !platform) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: title, excerpt, url, platform'
-      });
-    }
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from('content_items').insert({
+      company_id: companyId,
+      source_title: title,
+      source_content: excerpt || '',
+      source_url: url,
+      source_author: source || platform,
+      source_image_url: image_url,
+      source_guid: 'trending-' + (item_id || Date.now()),
+      review_status: 'pending'
+    }).select().single();
 
-    // Insert into content_items table with source = 'trending'
-    const query = `
-      INSERT INTO content_items (company_id, content_type, title, description, url, source, source_metadata, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      RETURNING id, title, description, url, source, created_at
-    `;
-
-    const metadata = {
-      item_id,
-      excerpt,
-      platform,
-      image_url,
-      saved_source: 'trending'
-    };
-
-    const result = db.prepare(query).get(
-      companyId,
-      'trending',
-      title,
-      excerpt,
-      url,
-      source || platform,
-      JSON.stringify(metadata)
-    );
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: {
-        id: result.id,
-        title: result.title,
-        excerpt: result.description,
-        url: result.url,
-        source: result.source,
-        created_at: result.created_at,
-        platform
-      },
+      data: { id: data.id, title: data.source_title, excerpt: data.source_content, url: data.source_url, source: data.source_author, platform, created_at: data.created_at },
       message: 'Content saved successfully'
     });
 
@@ -373,53 +349,32 @@ router.post('/save', async (req, res) => {
  * GET /api/trending/saved
  * Get all saved trending items for the current company
  */
-router.get('/saved', async (req, res) => {
+router.get('/saved', requireAuth, async (req, res) => {
   try {
     const companyId = req.headers['x-company-id'];
-
     if (!companyId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Company ID required'
-      });
+      return res.status(401).json({ success: false, error: 'Company ID required' });
     }
 
-    const query = `
-      SELECT
-        id,
-        title,
-        description as excerpt,
-        url,
-        source,
-        source_metadata,
-        created_at,
-        updated_at
-      FROM content_items
-      WHERE company_id = ? AND content_type = 'trending'
-      ORDER BY created_at DESC
-    `;
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from('content_items')
+      .select('*')
+      .eq('company_id', companyId)
+      .like('source_guid', 'trending-%')
+      .order('created_at', { ascending: false });
 
-    const results = db.prepare(query).all(companyId);
+    if (error) throw error;
 
-    // Parse metadata to extract platform and image_url
-    const items = results.map(item => {
-      let metadata = {};
-      try {
-        metadata = JSON.parse(item.source_metadata || '{}');
-      } catch (e) {
-        // Ignore parse errors
-      }
-      return {
-        id: item.id,
-        title: item.title,
-        excerpt: item.excerpt,
-        url: item.url,
-        source: item.source,
-        platform: metadata.platform || 'news',
-        image_url: metadata.image_url || `https://picsum.photos/seed/saved-${item.id}/600/400`,
-        timestamp: item.created_at
-      };
-    });
+    const items = (data || []).map(item => ({
+      id: item.id,
+      title: item.source_title,
+      excerpt: item.source_content,
+      url: item.source_url,
+      source: item.source_author,
+      platform: 'news',
+      image_url: item.source_image_url || `https://picsum.photos/seed/saved-${item.id}/600/400`,
+      timestamp: item.created_at
+    }));
 
     res.json({
       success: true,
