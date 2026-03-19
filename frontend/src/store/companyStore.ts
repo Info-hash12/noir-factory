@@ -21,7 +21,8 @@ export const useCompanyStore = create<CompanyState>((set) => ({
   fetchCompanies: async () => {
     set({ loading: true });
     try {
-      const companies = await api.getCompanies();
+      const result = await api.getCompanies();
+      const companies = result.companies || result.data || [];
       set({ companies, loading: false });
     } catch (error) {
       set({
@@ -38,7 +39,8 @@ export const useCompanyStore = create<CompanyState>((set) => ({
 
   initializeCompany: async () => {
     try {
-      const companies = await api.getCompanies();
+      const result = await api.getCompanies();
+      const companies = result.companies || result.data || [];
       set({ companies });
 
       const savedCompanyId = localStorage.getItem('noir_company_id');

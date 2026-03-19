@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Flame, AlertCircle, Loader, Zap, Share2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Flame, AlertCircle, Loader, Zap, Share2, Search, Bookmark, X } from 'lucide-react';
 import * as api from '../lib/api';
+import { useCompanyStore } from '../store/companyStore';
 import type { TrendingItem } from '../types';
-
-type Platform = 'all' | 'news' | 'reddit' | 'twitter' | 'tiktok' | 'instagram';
 
 const PLATFORM_COLORS = {
   reddit: { bg: 'bg-red-500/10', icon: 'text-red-500', border: 'border-red-500/30' },
@@ -22,48 +21,89 @@ const PLATFORM_LABELS = {
   news: 'News',
 };
 
+// Keywords by company
+const COMPANY_KEYWORDS: Record<string, string[]> = {
+  'RawFunds': ['real estate', 'AITA', 'personal finance', 'side hustle', 'investing'],
+  'Proxitap': ['airport wifi', 'travel security', 'data privacy', 'VPN', 'cybersecurity'],
+};
+
 export function TrendingPage() {
+  const { currentCompany } = useCompanyStore();
+  const [searchQuery, setSearchQuery] = useState('');
   const [trendingItems, setTrendingItems] = useState<TrendingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [savedItems, setSavedItems] = useState<TrendingItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPlatform, setSelectedPlatform] = useState<Platform>('all');
-  const [capturingId, setCapturingId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  // Get keywords for current company
+  const suggestedKeywords = currentCompany
+    ? COMPANY_KEYWORDS[currentCompany.name] || ['trending', 'news', 'tech']
+    : ['trending', 'news', 'tech'];
 
   useEffect(() => {
-    fetchTrending();
-  }, [selectedPlatform]);
+    // Load saved items on mount
+    fetchSavedItems();
+  }, []);
 
-  const fetchTrending = async () => {
+  const fetchSavedItems = async () => {
+    try {
+      const response = await api.getSavedTrending();
+      setSavedItems(response.data || []);
+      const ids = new Set((response.data || []).map((item: any) => item.id));
+      setSavedIds(ids);
+    } catch (err) {
+      console.error('Failed to fetch saved items:', err);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setTrendingItems([]);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const response = await api.getTrending(selectedPlatform === 'all' ? undefined : selectedPlatform);
+      const response = await api.searchTrending(query);
       setTrendingItems(response.data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch trending topics');
+      setError(err instanceof Error ? err.message : 'Failed to search trending topics');
       setTrendingItems([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchTrending();
-    setRefreshing(false);
+  const handleSave = async (item: TrendingItem) => {
+    setSavingId(item.id);
+    try {
+      await api.saveTrendingItem({
+        item_id: item.id,
+        title: item.title || '',
+        excerpt: (item as any).excerpt || '',
+        url: item.url || '',
+        source: item.source || '',
+        platform: item.platform || 'news',
+        image_url: item.image_url
+      });
+
+      setSavedIds(new Set([...savedIds, item.id]));
+      await fetchSavedItems();
+    } catch (err) {
+      console.error('Failed to save item:', err);
+    } finally {
+      setSavingId(null);
+    }
   };
 
-  const handleCapture = async (item: TrendingItem) => {
-    setCapturingId(item.id);
-    try {
-      console.log('Capturing trend:', item);
-      await new Promise(resolve => setTimeout(resolve, 500));
-    } catch (err) {
-      console.error('Failed to capture trend:', err);
-    } finally {
-      setCapturingId(null);
-    }
+  const handleRemoveSaved = (itemId: string) => {
+    setSavedItems(savedItems.filter(item => item.id !== itemId));
+    setSavedIds(new Set(Array.from(savedIds).filter(id => id !== itemId)));
   };
 
   const timeAgoFormatter = (timestamp: string): string => {
@@ -77,201 +117,257 @@ export function TrendingPage() {
     return `${Math.floor(hours / 24)}d ago`;
   };
 
-  // Skeleton loading card
-  const SkeletonCard = () => (
-    <motion.div
-      className="bg-noir-surface rounded-2xl overflow-hidden border border-noir-border"
-      animate={{ opacity: [0.6, 1, 0.6] }}
-      transition={{ duration: 2, repeat: Infinity }}
-    >
-      <div className="aspect-video bg-noir-bg" />
-      <div className="p-4 space-y-3">
-        <div className="h-4 bg-noir-bg rounded w-3/4" />
-        <div className="h-3 bg-noir-bg rounded w-1/2" />
-        <div className="flex gap-2">
-          <div className="h-10 bg-noir-bg rounded flex-1" />
-          <div className="h-10 bg-noir-bg rounded flex-1" />
-        </div>
-      </div>
-    </motion.div>
-  );
+  // Content Card Component
+  const ContentCard = ({ item, isSaved = false, onRemove }: { item: TrendingItem; isSaved?: boolean; onRemove?: () => void }) => {
+    const platformColor = PLATFORM_COLORS[item.platform as keyof typeof PLATFORM_COLORS] || PLATFORM_COLORS.news;
+    const isBeingSaved = savingId === item.id;
+    const isSavedAlready = savedIds.has(item.id);
 
-  if (loading && trendingItems.length === 0) {
     return (
-      <div className="min-h-screen bg-noir-bg pb-24">
-        <div className="sticky top-20 z-20 bg-noir-bg/95 backdrop-blur-sm border-b border-noir-border px-4 py-4">
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Flame className="w-5 h-5 text-accent-primary" />
-              <h1 className="text-lg font-black text-text-primary">Explore</h1>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-noir-surface border border-noir-border rounded-2xl overflow-hidden hover:border-accent-primary/50 transition-all duration-200 flex flex-col h-full"
+      >
+        {/* Image */}
+        <div className="aspect-video bg-noir-bg relative overflow-hidden">
+          {item.image_url ? (
+            <motion.img
+              src={item.image_url}
+              alt={item.title || 'Trending'}
+              className="w-full h-full object-cover"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.style.display = 'none';
+              }}
+            />
+          ) : null}
+          <div className={`absolute inset-0 ${item.image_url ? 'hidden' : ''} ${platformColor.bg} flex items-center justify-center border-b ${platformColor.border}`}>
+            <div className={`text-4xl ${platformColor.icon}`}>
+              {item.platform === 'reddit' && 'R'}
+              {item.platform === 'twitter' && 'X'}
+              {item.platform === 'tiktok' && '♪'}
+              {item.platform === 'instagram' && '📷'}
+              {item.platform === 'news' && '📰'}
             </div>
           </div>
         </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
-      </div>
-    );
-  }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-noir-bg flex items-center justify-center px-4">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-noir-surface border border-noir-border flex items-center justify-center">
-            <AlertCircle className="w-8 h-8 text-accent-danger" />
+        {/* Content */}
+        <div className="p-4 flex-1 flex flex-col">
+          {/* Source and Date */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`text-xs font-black px-2 py-1 rounded ${platformColor.bg} border ${platformColor.border}`}>
+                {item.source || PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS]}
+              </div>
+              <span className="text-xs text-text-muted">{timeAgoFormatter(item.timestamp)}</span>
+            </div>
           </div>
-          <p className="text-text-secondary">{error}</p>
-          <motion.button
-            onClick={fetchTrending}
-            className="px-6 py-2 bg-accent-primary hover:shadow-lg hover:shadow-accent-primary/30 text-noir-bg rounded-lg font-semibold transition-all duration-200 min-h-[44px]"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Try Again
-          </motion.button>
+
+          {/* Title */}
+          <h3 className="text-sm font-black text-text-primary mb-2 line-clamp-2">
+            {item.title || item.hashtag}
+          </h3>
+
+          {/* Excerpt */}
+          <p className="text-xs text-text-secondary mb-4 flex-1 line-clamp-3">
+            {(item as any).excerpt || `${item.volume?.toLocaleString()} posts • ${item.score?.toLocaleString()} engagement`}
+          </p>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 pt-4 border-t border-noir-border">
+            {isSaved ? (
+              <>
+                <motion.button
+                  onClick={onRemove}
+                  className="flex-1 px-3 py-2.5 bg-noir-bg hover:bg-noir-border text-text-primary rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 text-xs min-h-[40px]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <X className="w-3 h-3" />
+                  <span>Remove</span>
+                </motion.button>
+                <motion.button
+                  className="flex-1 px-3 py-2.5 bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 text-xs min-h-[40px]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Generate</span>
+                </motion.button>
+              </>
+            ) : (
+              <>
+                <motion.button
+                  onClick={() => handleSave(item)}
+                  disabled={isBeingSaved || isSavedAlready}
+                  className={`flex-1 px-3 py-2.5 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 text-xs min-h-[40px] ${
+                    isSavedAlready
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      : 'bg-noir-bg hover:bg-noir-border text-text-primary'
+                  }`}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {isBeingSaved ? (
+                    <>
+                      <Loader className="w-3 h-3 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : isSavedAlready ? (
+                    <>
+                      <Bookmark className="w-3 h-3" />
+                      <span>Saved</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="w-3 h-3" />
+                      <span>Save</span>
+                    </>
+                  )}
+                </motion.button>
+                <motion.button
+                  onClick={() => console.log('Quick post:', item)}
+                  className="flex-1 px-3 py-2.5 bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 text-xs min-h-[40px]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Quick Post</span>
+                </motion.button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      </motion.div>
     );
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-noir-bg">
-      {/* Header */}
+    <div className="min-h-screen bg-noir-bg pb-24">
+      {/* Header with Search */}
       <div className="sticky top-20 z-20 bg-noir-bg/95 backdrop-blur-sm border-b border-noir-border px-4 py-4">
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Flame className="w-5 h-5 text-accent-primary" />
-              <h1 className="text-lg font-black text-text-primary">Explore</h1>
-            </div>
-            <motion.button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="p-2 hover:bg-noir-surface rounded-lg transition-colors disabled:opacity-50 min-h-[44px] min-w-[44px]"
-              whileHover={{ rotate: refreshing ? 0 : 10 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Loader className={`w-5 h-5 text-accent-primary ${refreshing ? 'animate-spin' : ''}`} />
-            </motion.button>
+          <div className="flex items-center gap-2 mb-4">
+            <Flame className="w-5 h-5 text-accent-primary" />
+            <h1 className="text-lg font-black text-text-primary">Explore</h1>
           </div>
 
-          {/* Platform Filter */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {(['all', 'news', 'reddit', 'twitter', 'tiktok', 'instagram'] as Platform[]).map((platform) => (
-              <motion.button
-                key={platform}
-                onClick={() => setSelectedPlatform(platform)}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm whitespace-nowrap transition-all duration-200 min-h-[44px] ${
-                  selectedPlatform === platform
-                    ? 'bg-accent-primary text-noir-bg shadow-lg shadow-accent-primary/30'
-                    : 'bg-noir-surface border border-noir-border text-text-secondary hover:border-accent-primary/50'
-                }`}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {platform === 'all' ? 'All' : PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS]}
-              </motion.button>
-            ))}
+          {/* Search Bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="text"
+              placeholder="Search trending topics... (e.g., airport wifi, real estate investing)"
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-noir-surface border border-noir-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary/50 transition-colors"
+            />
           </div>
+
+          {/* Keyword Suggestions */}
+          {!searchQuery && (
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {suggestedKeywords.map((keyword) => (
+                <motion.button
+                  key={keyword}
+                  onClick={() => handleSearch(keyword)}
+                  className="px-3 py-1.5 bg-noir-surface border border-noir-border rounded-lg text-xs font-semibold text-text-secondary hover:border-accent-primary/50 whitespace-nowrap transition-all min-h-[36px]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {keyword}
+                </motion.button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Content Grid */}
-      <div className="p-4 pb-24">
-        {trendingItems.length === 0 ? (
-          <div className="text-center space-y-4 py-12">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-noir-surface border border-noir-border flex items-center justify-center">
-              <Flame className="w-8 h-8 text-text-muted" />
-            </div>
-            <p className="text-text-secondary">No trending topics found</p>
-            <p className="text-text-muted text-sm">Try selecting a different platform or check back later</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {trendingItems.map((item, index) => {
-              const platformColor =
-                PLATFORM_COLORS[item.platform as keyof typeof PLATFORM_COLORS] ||
-                PLATFORM_COLORS.reddit;
+      {/* Main Content */}
+      <div className="p-4">
+        {error && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-4 p-4 bg-accent-danger/10 border border-accent-danger/30 rounded-lg flex items-center gap-3"
+          >
+            <AlertCircle className="w-5 h-5 text-accent-danger flex-shrink-0" />
+            <span className="text-sm text-accent-danger">{error}</span>
+          </motion.div>
+        )}
 
-              return (
-                <motion.div
-                  key={item.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="bg-noir-surface border border-noir-border rounded-2xl overflow-hidden hover:border-accent-primary/50 transition-all duration-200 flex flex-col h-full"
-                >
-                  {/* Image */}
-                  <div className={`aspect-video ${platformColor.bg} flex items-center justify-center border-b ${platformColor.border}`}>
-                    <div className={`text-4xl ${platformColor.icon}`}>
-                      {item.platform === 'reddit' && 'R'}
-                      {item.platform === 'twitter' && 'X'}
-                      {item.platform === 'tiktok' && '♪'}
-                      {item.platform === 'instagram' && '📷'}
-                      {item.platform === 'news' && '📰'}
-                    </div>
-                  </div>
-
-                  {/* Content */}
-                  <div className="p-4 flex-1 flex flex-col">
-                    {/* Source and Date */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className={`text-xs font-black px-2 py-1 rounded ${platformColor.bg} border ${platformColor.border}`}>
-                          {PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS]}
-                        </div>
-                        <span className="text-xs text-text-muted">{timeAgoFormatter(item.timestamp)}</span>
-                      </div>
-                    </div>
-
-                    {/* Headline */}
-                    <h3 className="text-sm font-black text-text-primary mb-2 line-clamp-2">
-                      {item.hashtag ? `#${item.hashtag}` : item.topic}
-                    </h3>
-
-                    {/* Excerpt */}
-                    <p className="text-xs text-text-secondary mb-4 flex-1 line-clamp-2">
-                      Trending with {item.volume.toLocaleString()} posts and {item.score.toLocaleString()} engagement score
+        {/* Search Results */}
+        <AnimatePresence>
+          {searchQuery && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader className="w-8 h-8 text-accent-primary animate-spin" />
+                </div>
+              ) : trendingItems.length === 0 ? (
+                <div className="text-center space-y-4 py-12">
+                  <Search className="w-12 h-12 mx-auto text-text-muted opacity-50" />
+                  <p className="text-text-secondary">No results found for "{searchQuery}"</p>
+                  <p className="text-text-muted text-sm">Try a different search term</p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <p className="text-text-muted text-sm mb-4">
+                      Found {trendingItems.length} result{trendingItems.length !== 1 ? 's' : ''} for "{searchQuery}"
                     </p>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 pt-4 border-t border-noir-border">
-                      <motion.button
-                        onClick={() => handleCapture(item)}
-                        disabled={capturingId === item.id}
-                        className="flex-1 px-3 py-2.5 bg-noir-bg hover:bg-noir-border text-text-primary rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-1.5 text-xs min-h-[40px]"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        {capturingId === item.id ? (
-                          <>
-                            <Loader className="w-3 h-3 animate-spin" />
-                            <span>Capture</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-3 h-3" />
-                            <span>Capture</span>
-                          </>
-                        )}
-                      </motion.button>
-                      <motion.button
-                        onClick={() => console.log('Quick post:', item)}
-                        className="flex-1 px-3 py-2.5 bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 text-xs min-h-[40px]"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Share2 className="w-3 h-3" />
-                        <span>Quick Post</span>
-                      </motion.button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {trendingItems.map((item) => (
+                        <ContentCard key={item.id} item={item} />
+                      ))}
                     </div>
                   </div>
-                </motion.div>
-              );
-            })}
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Saved Content Section */}
+        {savedItems.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Bookmark className="w-5 h-5 text-accent-primary" />
+              <h2 className="text-lg font-black text-text-primary">Saved Content</h2>
+              <span className="text-xs text-text-muted ml-auto">({savedItems.length})</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {savedItems.map((item) => (
+                <ContentCard
+                  key={item.id}
+                  item={item}
+                  isSaved={true}
+                  onRemove={() => handleRemoveSaved(item.id)}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Empty State */}
+        {!searchQuery && savedItems.length === 0 && (
+          <div className="text-center space-y-4 py-12">
+            <Flame className="w-12 h-12 mx-auto text-text-muted opacity-50" />
+            <p className="text-text-secondary">Start searching to discover trending topics</p>
+            <p className="text-text-muted text-sm">Use the keywords above or search for your own interests</p>
           </div>
         )}
       </div>

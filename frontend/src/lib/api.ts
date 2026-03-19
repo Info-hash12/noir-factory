@@ -206,3 +206,23 @@ export function getTrending(platform?: string) {
   const url = platform ? `/trending?platform=${platform}` : '/trending';
   return apiCall(url);
 }
+
+export function searchTrending(query: string) {
+  return apiCall(`/trending?q=${encodeURIComponent(query)}`);
+}
+
+export function saveTrendingItem(item: {
+  item_id?: string;
+  title: string;
+  excerpt: string;
+  url: string;
+  source: string;
+  platform: string;
+  image_url?: string;
+}) {
+  return apiCall('/trending/save', { method: 'POST', body: item });
+}
+
+export function getSavedTrending() {
+  return apiCall('/trending/saved');
+}
