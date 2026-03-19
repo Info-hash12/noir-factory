@@ -72,11 +72,11 @@ export function BotPage() {
         api.getEngagementStatsDetailed({ period }),
       ]);
 
-      // Extract data from API responses (handle both wrapped and unwrapped formats)
-      setBotEnabled(status?.enabled || status?.data?.enabled || false);
-      setHashtags(hashtags?.hashtags || hashtags?.data?.hashtags || []);
-      setTemplates(templates?.data || templates || []);
-      setActivities(activities?.data || activities || []);
+      // Extract data from API responses carefully
+      setBotEnabled(status?.data?.enabled || status?.enabled || false);
+      setHashtags(hashtags?.data?.hashtags || hashtags?.hashtags || []);
+      setTemplates(templates?.templates || templates?.data || []);
+      setActivities(activities?.data || []);
 
       // Handle stats response - it returns { success, period, totals, by_platform, ... }
       if (detailedStats && detailedStats.totals) {
