@@ -251,3 +251,16 @@ export function generateText(promptType: string, context: string) {
     body: { prompt_type: promptType, context }
   });
 }
+
+// Social Media OAuth Connections
+export function getConnectionStatus() {
+  return apiCall('/connect/status');
+}
+
+export function connectPlatform(platform: string) {
+  return apiCall(`/connect/${platform}`);
+}
+
+export function disconnectPlatform(platform: string) {
+  return apiCall(`/connect/${platform}`, { method: 'DELETE' });
+}

@@ -23,6 +23,7 @@ const engagementRoutes = require('./routes/engagement');
 const engagementBotRoutes = require('./routes/engagement-bot');
 const schedulerRoutes = require('./routes/scheduler');
 const metaIntegrationsRoutes = require('./routes/meta-integrations');
+const socialConnectRoutes = require('./routes/social-connect');
 const trendingRoutes = require('./routes/trending');
 const analyticsRoutes = require('./routes/analytics');
 const logger = require('./utils/logger');
@@ -125,6 +126,7 @@ app.use('/api/engagement', engagementRoutes);
 app.use('/api/engagement', engagementBotRoutes); // Engagement bot routes (shares prefix)
 app.use('/api/schedule', schedulerRoutes); // Smart scheduling
 app.use('/api/integrations/meta', metaIntegrationsRoutes); // Meta Business Suite
+app.use('/api/connect', socialConnectRoutes); // Social media OAuth
 app.use('/api/trending', trendingRoutes);
 app.use('/api/analytics', analyticsRoutes);
 

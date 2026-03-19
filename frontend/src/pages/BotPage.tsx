@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Heart, MessageCircle, UserPlus, Sparkles, X, CheckCircle2, Send } from 'lucide-react';
+import { Plus, Trash2, Heart, MessageCircle, UserPlus, Sparkles, X, CheckCircle2, Send, LogOut } from 'lucide-react';
 import * as api from '../lib/api';
 
 interface Template {
@@ -19,6 +19,14 @@ interface DetailedActivityItem {
   username?: string;
   timestamp: string;
   success: boolean;
+}
+
+interface PlatformStatus {
+  connected: boolean;
+  account_name?: string;
+  expires_at?: string;
+  error?: string;
+  reason?: string;
 }
 
 const PLATFORMS = [
@@ -128,9 +136,12 @@ export function BotPage() {
   const [activities, setActivities] = useState<DetailedActivityItem[]>(DEMO_ACTIVITIES);
   const [loading, setLoading] = useState(true);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
+  const [platformStatus, setPlatformStatus] = useState<Record<string, PlatformStatus>>({});
+  const [connecting, setConnecting] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadBotData();
+    loadConnectionStatus();
   }, []);
 
   const loadBotData = async () => {
@@ -152,6 +163,64 @@ export function BotPage() {
       setTemplates([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadConnectionStatus = async () => {
+    try {
+      const response = await api.getConnectionStatus();
+      setPlatformStatus(response?.platforms || {});
+    } catch (error) {
+      console.error('Failed to load connection status:', error);
+      // Initialize empty status
+      const emptyStatus: Record<string, PlatformStatus> = {};
+      PLATFORMS.forEach(p => {
+        emptyStatus[p.id] = { connected: false };
+      });
+      setPlatformStatus(emptyStatus);
+    }
+  };
+
+  const handleConnectPlatform = async (platformId: string) => {
+    try {
+      setConnecting(prev => ({ ...prev, [platformId]: true }));
+      const response = await api.connectPlatform(platformId);
+
+      if (response?.authUrl) {
+        // Open OAuth flow in new window
+        const authWindow = window.open(response.authUrl, '_blank', 'width=500,height=600');
+
+        // Check for success periodically
+        const checkInterval = setInterval(async () => {
+          if (authWindow?.closed) {
+            clearInterval(checkInterval);
+            // Reload status after window closes
+            setTimeout(() => loadConnectionStatus(), 1000);
+          }
+        }, 500);
+      } else if (response?.error) {
+        alert(`Error: ${response.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to initiate connection:', error);
+      alert('Failed to connect platform');
+    } finally {
+      setConnecting(prev => ({ ...prev, [platformId]: false }));
+    }
+  };
+
+  const handleDisconnectPlatform = async (platformId: string) => {
+    if (!window.confirm(`Disconnect ${platformId}?`)) return;
+
+    try {
+      setConnecting(prev => ({ ...prev, [platformId]: true }));
+      await api.disconnectPlatform(platformId);
+      await loadConnectionStatus();
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
+      alert('Failed to disconnect platform');
+    } finally {
+      setConnecting(prev => ({ ...prev, [platformId]: false }));
     }
   };
 
@@ -285,13 +354,79 @@ export function BotPage() {
   return (
     <div className="min-h-screen bg-noir-bg">
       <div className="px-4 py-6 pb-24 max-w-3xl mx-auto space-y-6">
-        {/* Section 1: Platform Selector */}
+        {/* Section 1: Platform Selector and Connection Status */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="space-y-4"
         >
-          <h2 className="text-lg font-black text-text-primary">Select Platform</h2>
+          <h2 className="text-lg font-black text-text-primary">Connected Platforms</h2>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {PLATFORMS.map((platform, index) => {
+              const status = platformStatus[platform.id];
+              const isConnected = status?.connected;
+
+              return (
+                <motion.div
+                  key={platform.id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.05 }}
+                  className={`p-4 rounded-xl border-2 transition-all duration-200 space-y-3 ${
+                    selectedPlatform === platform.id
+                      ? 'bg-accent-primary/20 border-accent-primary'
+                      : 'bg-noir-surface border-noir-border hover:border-accent-primary/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{platform.icon}</span>
+                      <div>
+                        <h3 className="text-sm font-bold text-text-primary">{platform.name}</h3>
+                        {isConnected && status?.account_name && (
+                          <p className="text-xs text-accent-success font-semibold">
+                            {status.account_name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {isConnected && (
+                      <CheckCircle2 className="w-5 h-5 text-accent-success flex-shrink-0" />
+                    )}
+                  </div>
+
+                  {isConnected ? (
+                    <motion.button
+                      onClick={() => handleDisconnectPlatform(platform.id)}
+                      disabled={connecting[platform.id]}
+                      className="w-full px-3 py-2 bg-accent-danger/10 hover:bg-accent-danger/20 text-accent-danger rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2 min-h-[40px]"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {connecting[platform.id] ? 'Disconnecting...' : 'Disconnect'}
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      onClick={() => handleConnectPlatform(platform.id)}
+                      disabled={connecting[platform.id]}
+                      className="w-full px-3 py-2 bg-accent-primary/20 hover:bg-accent-primary/30 text-accent-primary rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm min-h-[40px]"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {connecting[platform.id] ? 'Connecting...' : 'Connect'}
+                    </motion.button>
+                  )}
+
+                  {status?.reason && (
+                    <p className="text-xs text-text-muted italic">{status.reason}</p>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+
+          <h2 className="text-lg font-black text-text-primary pt-4">Select Platform</h2>
           <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
             {PLATFORMS.map((platform, index) => (
               <motion.button

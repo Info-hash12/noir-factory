@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Edit2, Save, X, Settings, Rss, LogOut } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Settings, Rss, LogOut, Link, CheckCircle2 } from 'lucide-react';
 import { useContentStore } from '../store/contentStore';
 import { useAuthStore } from '../store/authStore';
 import { useCompanyStore } from '../store/companyStore';
@@ -21,6 +21,14 @@ interface Prompts {
   first_comment?: string;
 }
 
+interface PlatformStatus {
+  connected: boolean;
+  account_name?: string;
+  expires_at?: string;
+  error?: string;
+  reason?: string;
+}
+
 export function SettingsPage() {
   const { logout } = useAuthStore();
   const { currentCompany } = useCompanyStore();
@@ -34,12 +42,78 @@ export function SettingsPage() {
   const [editingPrompt, setEditingPrompt] = useState<keyof Prompts | null>(null);
   const [promptValues, setPromptValues] = useState<Prompts>({});
 
+  const [platformStatus, setPlatformStatus] = useState<Record<string, PlatformStatus>>({});
+  const [connecting, setConnecting] = useState<Record<string, boolean>>({});
+
+  const PLATFORMS = [
+    { id: 'instagram', name: 'Instagram', icon: '📷' },
+    { id: 'facebook', name: 'Facebook', icon: '👍' },
+    { id: 'threads', name: 'Threads', icon: '🧵' },
+    { id: 'tiktok', name: 'TikTok', icon: '🎵' },
+    { id: 'twitter', name: 'Twitter/X', icon: '𝕏' },
+    { id: 'linkedin', name: 'LinkedIn', icon: '💼' },
+  ];
+
   useEffect(() => {
     fetchFeeds();
+    loadConnectionStatus();
     if (currentCompany) {
       loadPrompts();
     }
   }, [currentCompany]);
+
+  const loadConnectionStatus = async () => {
+    try {
+      const response = await api.getConnectionStatus();
+      setPlatformStatus(response?.platforms || {});
+    } catch (error) {
+      console.error('Failed to load connection status:', error);
+      const emptyStatus: Record<string, PlatformStatus> = {};
+      PLATFORMS.forEach(p => {
+        emptyStatus[p.id] = { connected: false };
+      });
+      setPlatformStatus(emptyStatus);
+    }
+  };
+
+  const handleConnectPlatform = async (platformId: string) => {
+    try {
+      setConnecting(prev => ({ ...prev, [platformId]: true }));
+      const response = await api.connectPlatform(platformId);
+
+      if (response?.authUrl) {
+        const authWindow = window.open(response.authUrl, '_blank', 'width=500,height=600');
+        const checkInterval = setInterval(async () => {
+          if (authWindow?.closed) {
+            clearInterval(checkInterval);
+            setTimeout(() => loadConnectionStatus(), 1000);
+          }
+        }, 500);
+      } else if (response?.error) {
+        alert(`Error: ${response.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to initiate connection:', error);
+      alert('Failed to connect platform');
+    } finally {
+      setConnecting(prev => ({ ...prev, [platformId]: false }));
+    }
+  };
+
+  const handleDisconnectPlatform = async (platformId: string) => {
+    if (!window.confirm(`Disconnect ${platformId}?`)) return;
+
+    try {
+      setConnecting(prev => ({ ...prev, [platformId]: true }));
+      await api.disconnectPlatform(platformId);
+      await loadConnectionStatus();
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
+      alert('Failed to disconnect platform');
+    } finally {
+      setConnecting(prev => ({ ...prev, [platformId]: false }));
+    }
+  };
 
   const loadPrompts = async () => {
     if (!currentCompany) return;
@@ -131,6 +205,85 @@ export function SettingsPage() {
             <h1 className="text-3xl font-black text-text-primary">Settings</h1>
           </div>
           <p className="text-text-secondary">Manage your content sources and AI prompts</p>
+        </motion.div>
+
+        {/* Integrations Section */}
+        <motion.div
+          className="bg-noir-surface border border-noir-border rounded-2xl p-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Link className="w-5 h-5 text-accent-primary" />
+              <h3 className="text-lg font-black text-text-primary">Social Media Integrations</h3>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {PLATFORMS.map((platform, index) => {
+              const status = platformStatus[platform.id];
+              const isConnected = status?.connected;
+
+              return (
+                <motion.div
+                  key={platform.id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.05 + index * 0.03 }}
+                  className="bg-noir-bg border border-noir-border rounded-lg p-4 space-y-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{platform.icon}</span>
+                      <div>
+                        <h4 className="text-sm font-bold text-text-primary">{platform.name}</h4>
+                        {isConnected && status?.account_name && (
+                          <p className="text-xs text-accent-success font-semibold">
+                            {status.account_name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {isConnected && (
+                      <CheckCircle2 className="w-4 h-4 text-accent-success flex-shrink-0" />
+                    )}
+                  </div>
+
+                  {isConnected ? (
+                    <motion.button
+                      onClick={() => handleDisconnectPlatform(platform.id)}
+                      disabled={connecting[platform.id]}
+                      className="w-full px-3 py-2 bg-accent-danger/10 hover:bg-accent-danger/20 text-accent-danger rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs min-h-[36px]"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {connecting[platform.id] ? 'Disconnecting...' : 'Disconnect'}
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      onClick={() => handleConnectPlatform(platform.id)}
+                      disabled={connecting[platform.id]}
+                      className="w-full px-3 py-2 bg-accent-primary/20 hover:bg-accent-primary/30 text-accent-primary rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs min-h-[36px]"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {connecting[platform.id] ? 'Connecting...' : 'Connect'}
+                    </motion.button>
+                  )}
+
+                  {status?.reason && (
+                    <p className="text-xs text-text-muted italic">{status.reason}</p>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+
+          <p className="text-sm text-text-muted mt-6">
+            Connect your social media accounts to enable the engagement bot to post content and manage your social presence.
+          </p>
         </motion.div>
 
         {/* RSS Feeds Section */}
