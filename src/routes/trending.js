@@ -718,7 +718,7 @@ router.get('/saved-searches', requireAuth, async (req, res) => {
       .select('*')
       .eq('company_id', companyId)
       .like('key', 'saved_search_%')
-      .order('created_at', { ascending: false });
+      .order('updated_at', { ascending: false });
 
     if (error) throw error;
 
