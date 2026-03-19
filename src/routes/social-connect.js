@@ -18,23 +18,47 @@ const PLATFORMS = ['instagram', 'facebook', 'threads', 'tiktok', 'twitter', 'lin
 /**
  * GET /api/connect/status — MUST be before /:platform to avoid matching "status" as a platform
  */
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const companyId = req.headers['x-company-id'] || 'default-company';
     const platforms = {};
+
+    // Check each platform
     for (const platform of PLATFORMS) {
-      if (!oauthService.isPlatformConfigured(platform)) {
-        platforms[platform] = { connected: false, reason: `${platform.toUpperCase()}_CLIENT_ID not configured` };
-      } else {
-        platforms[platform] = { connected: false };
+      const configured = oauthService.isPlatformConfigured(platform);
+      if (!configured) {
+        const envName = {
+          instagram: 'META_APP_ID', facebook: 'META_APP_ID', threads: 'META_APP_ID',
+          tiktok: 'TIKTOK_CLIENT_KEY', twitter: 'TWITTER_CLIENT_ID', linkedin: 'LINKEDIN_CLIENT_ID'
+        }[platform] || `${platform.toUpperCase()}_CLIENT_ID`;
+        platforms[platform] = { connected: false, reason: `Set ${envName} in environment to connect` };
+        continue;
+      }
+
+      // Check Supabase for stored integration
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data } = await supabase.from('company_integrations')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('platform', platform)
+          .eq('status', 'active')
+          .limit(1);
+
+        if (data && data.length > 0) {
+          platforms[platform] = {
+            connected: true,
+            account_name: data[0].account_name || platform,
+            expires_at: data[0].token_expires_at
+          };
+        } else {
+          platforms[platform] = { connected: false, reason: 'Not connected — tap Connect to authorize' };
+        }
+      } catch (dbErr) {
+        platforms[platform] = { connected: false, reason: 'Not connected — tap Connect to authorize' };
       }
     }
-    // Check Meta specifically since user has META_APP_ID
-    if (process.env.META_APP_ID) {
-      ['instagram', 'facebook', 'threads'].forEach(p => {
-        platforms[p] = { connected: false, reason: 'Not connected yet — tap Connect to authorize' };
-      });
-    }
+
     res.json({ success: true, company_id: companyId, platforms });
   } catch (error) {
     logger.error('Error in /connect/status:', error.message);
