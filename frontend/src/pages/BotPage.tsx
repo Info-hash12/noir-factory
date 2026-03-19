@@ -1,14 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Heart, MessageCircle, UserPlus, Sparkles, X } from 'lucide-react';
+import { Plus, Trash2, Heart, MessageCircle, UserPlus, Sparkles, X, CheckCircle2, Send } from 'lucide-react';
 import * as api from '../lib/api';
-
-interface Activity {
-  id: string;
-  type: 'like' | 'comment' | 'follow';
-  platform: string;
-  timestamp: string;
-}
 
 interface Template {
   id: string;
@@ -16,86 +9,147 @@ interface Template {
   content: string;
 }
 
-interface PlatformStats {
+interface DetailedActivityItem {
+  id: string;
   platform: string;
-  likes: number;
-  comments: number;
-  follows: number;
-  total: number;
+  action: 'like' | 'comment' | 'follow' | 'dm';
+  target: string;
+  content?: string;
+  postTitle?: string;
+  username?: string;
+  timestamp: string;
+  success: boolean;
 }
 
-interface DetailedStats {
-  period: string;
-  totals: {
-    likes: number;
-    comments: number;
-    follows: number;
-    total: number;
-  };
-  byPlatform: Record<string, { likes: number; comments: number; follows: number; total: number }>;
-}
+const PLATFORMS = [
+  { id: 'instagram', name: 'Instagram', icon: '📷' },
+  { id: 'tiktok', name: 'TikTok', icon: '🎵' },
+  { id: 'twitter', name: 'Twitter/X', icon: '𝕏' },
+  { id: 'facebook', name: 'Facebook', icon: '👍' },
+  { id: 'linkedin', name: 'LinkedIn', icon: '💼' },
+  { id: 'threads', name: 'Threads', icon: '🧵' },
+];
 
-const PLATFORM_INFO = {
-  instagram: { name: 'Instagram', icon: '📷', color: 'from-pink-500 to-rose-500' },
-  tiktok: { name: 'TikTok', icon: '🎵', color: 'from-black to-slate-900' },
-  youtube: { name: 'YouTube', icon: '▶️', color: 'from-red-500 to-red-600' },
-  twitter: { name: 'Twitter/X', icon: '𝕏', color: 'from-black to-slate-800' },
-  facebook: { name: 'Facebook', icon: '👍', color: 'from-blue-500 to-blue-600' },
-  threads: { name: 'Threads', icon: '🧵', color: 'from-black to-slate-900' },
-  linkedin: { name: 'LinkedIn', icon: '💼', color: 'from-blue-400 to-blue-500' },
-};
+const BOT_ACTIONS = [
+  {
+    id: 'like',
+    title: 'Auto-Like',
+    icon: '🤍',
+    description: 'Likes posts matching your hashtags',
+    rateLimit: '20/hour max',
+  },
+  {
+    id: 'comment',
+    title: 'Auto-Comment',
+    icon: '💬',
+    description: 'Comments using your templates',
+    rateLimit: '20/hour max',
+  },
+  {
+    id: 'follow',
+    title: 'Auto-Follow',
+    icon: '👤',
+    description: 'Follows users in your niche',
+    rateLimit: '20/hour max',
+  },
+  {
+    id: 'dm',
+    title: 'Auto-DM',
+    icon: '📩',
+    description: 'Welcome message to new followers',
+    rateLimit: '20/hour max',
+  },
+];
+
+// Demo activity data
+const DEMO_ACTIVITIES: DetailedActivityItem[] = [
+  {
+    id: '1',
+    platform: 'instagram',
+    action: 'comment',
+    target: '@travelsafe_tips',
+    content: 'Great tips! Airport WiFi security is so important for frequent travelers 🛫',
+    postTitle: 'WiFi Security at Airports',
+    timestamp: new Date(Date.now() - 2 * 60000).toISOString(),
+    success: true,
+  },
+  {
+    id: '2',
+    platform: 'instagram',
+    action: 'like',
+    target: '@cybersecurity_daily',
+    postTitle: 'New vulnerability discovered in public WiFi networks',
+    timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
+    success: true,
+  },
+  {
+    id: '3',
+    platform: 'instagram',
+    action: 'follow',
+    target: '@digitalnomad_security',
+    username: 'digitalnomad_security',
+    timestamp: new Date(Date.now() - 8 * 60000).toISOString(),
+    success: true,
+  },
+  {
+    id: '4',
+    platform: 'instagram',
+    action: 'comment',
+    target: '@vpn_reviews',
+    content: 'This is exactly what every traveler needs to know! 🔒',
+    postTitle: 'Best VPNs for Travel 2026',
+    timestamp: new Date(Date.now() - 12 * 60000).toISOString(),
+    success: true,
+  },
+  {
+    id: '5',
+    platform: 'instagram',
+    action: 'like',
+    target: '@security_tips_daily',
+    postTitle: 'How to protect your passwords on public WiFi',
+    timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
+    success: true,
+  },
+];
 
 export function BotPage() {
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('instagram');
   const [botEnabled, setBotEnabled] = useState(false);
+  const [actionStates, setActionStates] = useState({
+    like: true,
+    comment: true,
+    follow: true,
+    dm: false,
+  });
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [newHashtag, setNewHashtag] = useState('');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [newTemplate, setNewTemplate] = useState({ name: '', content: '' });
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [stats, setStats] = useState<DetailedStats | null>(null);
-  const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [activities, setActivities] = useState<DetailedActivityItem[]>(DEMO_ACTIVITIES);
   const [loading, setLoading] = useState(true);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
 
   useEffect(() => {
     loadBotData();
-  }, [period]);
+  }, []);
 
   const loadBotData = async () => {
     try {
       setLoading(true);
-      const [status, hashtags, templates, activities, detailedStats] = await Promise.all([
+      const [status, hashtags, templates] = await Promise.all([
         api.getEngagementStatus(),
         api.getEngagementHashtags(),
         api.getEngagementTemplates(),
-        api.getEngagementActivities(),
-        api.getEngagementStatsDetailed({ period }),
       ]);
 
-      // Extract data from API responses carefully
       setBotEnabled(status?.data?.enabled || status?.enabled || false);
       setHashtags(hashtags?.data?.hashtags || hashtags?.hashtags || []);
       setTemplates(templates?.templates || templates?.data || []);
-      setActivities(activities?.data || []);
-
-      // Handle stats response - it returns { success, period, totals, by_platform, ... }
-      if (detailedStats && detailedStats.totals) {
-        setStats({
-          period: detailedStats.period || period,
-          totals: detailedStats.totals,
-          byPlatform: detailedStats.by_platform || {}
-        });
-      } else {
-        setStats(null);
-      }
     } catch (error) {
       console.error('Failed to load bot data:', error);
-      // Set safe defaults on error
       setBotEnabled(false);
       setHashtags([]);
       setTemplates([]);
-      setActivities([]);
-      setStats(null);
     } finally {
       setLoading(false);
     }
@@ -108,6 +162,13 @@ export function BotPage() {
     } catch (error) {
       console.error('Failed to toggle bot:', error);
     }
+  };
+
+  const handleToggleAction = (actionId: string) => {
+    setActionStates(prev => ({
+      ...prev,
+      [actionId]: !prev[actionId as keyof typeof actionStates],
+    }));
   };
 
   const handleAddHashtag = async () => {
@@ -156,6 +217,54 @@ export function BotPage() {
     }
   };
 
+  const getPlatformInfo = (platformId: string) => {
+    return PLATFORMS.find(p => p.id === platformId);
+  };
+
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case 'like':
+        return <Heart className="w-5 h-5" />;
+      case 'comment':
+        return <MessageCircle className="w-5 h-5" />;
+      case 'follow':
+        return <UserPlus className="w-5 h-5" />;
+      case 'dm':
+        return <Send className="w-5 h-5" />;
+      default:
+        return null;
+    }
+  };
+
+  const getActionColor = (action: string) => {
+    switch (action) {
+      case 'like':
+        return 'text-accent-danger bg-accent-danger/10';
+      case 'comment':
+        return 'text-accent-primary bg-accent-primary/10';
+      case 'follow':
+        return 'text-accent-success bg-accent-success/10';
+      case 'dm':
+        return 'text-accent-primary bg-accent-primary/10';
+      default:
+        return 'text-text-secondary bg-noir-border/20';
+    }
+  };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-noir-bg flex items-center justify-center px-4">
@@ -171,27 +280,77 @@ export function BotPage() {
     );
   }
 
+  const selectedPlatformInfo = getPlatformInfo(selectedPlatform);
+
   return (
     <div className="min-h-screen bg-noir-bg">
-      <div className="px-4 py-6 pb-24 max-w-2xl mx-auto space-y-8">
-        {/* Hero Section - Bot Toggle */}
+      <div className="px-4 py-6 pb-24 max-w-3xl mx-auto space-y-6">
+        {/* Section 1: Platform Selector */}
         <motion.div
-          className="bg-gradient-to-br from-accent-primary/10 to-accent-danger/5 border border-accent-primary/30 rounded-2xl p-6 mb-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          className="space-y-4"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
+          <h2 className="text-lg font-black text-text-primary">Select Platform</h2>
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+            {PLATFORMS.map((platform, index) => (
+              <motion.button
+                key={platform.id}
+                onClick={() => setSelectedPlatform(platform.id)}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.05 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`flex-shrink-0 px-4 py-3 rounded-xl border-2 transition-all duration-200 flex items-center gap-2 min-h-[44px] ${
+                  selectedPlatform === platform.id
+                    ? 'bg-accent-primary/20 border-accent-primary text-accent-primary'
+                    : 'bg-noir-surface border-noir-border text-text-secondary hover:border-accent-primary/50'
+                }`}
+              >
+                <span className="text-xl">{platform.icon}</span>
+                <span className="text-sm font-semibold whitespace-nowrap">{platform.name}</span>
+                <motion.div
+                  className={`w-2 h-2 rounded-full ml-1 ${
+                    selectedPlatform === platform.id ? 'bg-accent-primary' : 'bg-text-muted'
+                  }`}
+                  animate={{
+                    scale: selectedPlatform === platform.id ? [1, 1.2, 1] : 1,
+                  }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Section 2: Bot Controls */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-gradient-to-br from-accent-primary/15 to-accent-primary/5 border-2 border-accent-primary/30 rounded-2xl p-6"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-2 flex-1">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-accent-primary" />
-                <h2 className="text-xl font-black text-text-primary">Engagement Bot</h2>
+                {botEnabled && (
+                  <motion.div
+                    className="w-3 h-3 rounded-full bg-accent-success"
+                    animate={{ scale: [1, 1.3, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  />
+                )}
+                <h3 className="text-xl font-black text-text-primary">
+                  Engagement Bot {selectedPlatformInfo && `on ${selectedPlatformInfo.name}`}
+                </h3>
               </div>
               <p className="text-sm text-text-secondary">
-                {botEnabled ? 'Active and engaging with your audience' : 'Enable to start automated engagement'}
+                {botEnabled
+                  ? `Active and engaging on ${selectedPlatformInfo?.name}`
+                  : `Enable to start automated engagement on ${selectedPlatformInfo?.name}`}
               </p>
             </div>
-
-            {/* Toggle Switch */}
             <motion.button
               onClick={handleToggleBot}
               className={`relative inline-flex w-14 h-8 items-center rounded-full transition-all duration-300 flex-shrink-0 min-h-[44px]`}
@@ -212,142 +371,143 @@ export function BotPage() {
           </div>
         </motion.div>
 
-        {/* Period Selector Pills */}
+        {/* Section 3: What the Bot Does */}
         <motion.div
-          className="flex gap-2 overflow-x-auto scrollbar-hide pb-2"
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.2 }}
+          className="space-y-4"
         >
-          {(['today', 'week', 'month', 'all'] as const).map((p) => (
-            <motion.button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200 min-h-[44px] whitespace-nowrap border capitalize ${
-                period === p
-                  ? 'bg-accent-primary text-noir-bg border-accent-primary shadow-lg shadow-accent-primary/30'
-                  : 'border-noir-border text-text-secondary hover:text-text-primary hover:border-accent-primary/50'
-              }`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {p}
-            </motion.button>
-          ))}
+          <h2 className="text-lg font-black text-text-primary">Bot Actions</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {BOT_ACTIONS.map((action, index) => (
+              <motion.div
+                key={action.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.25 + index * 0.05 }}
+                className="bg-noir-surface border border-noir-border rounded-xl p-4 space-y-3"
+              >
+                <div className="text-3xl">{action.icon}</div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm text-text-primary">{action.title}</h4>
+                  <p className="text-xs text-text-muted leading-tight">{action.description}</p>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-noir-border">
+                  <span className="text-xs text-text-muted font-semibold">{action.rateLimit}</span>
+                  <motion.button
+                    onClick={() => handleToggleAction(action.id)}
+                    className={`relative inline-flex w-10 h-6 items-center rounded-full transition-all duration-300 flex-shrink-0 min-h-[44px]`}
+                    style={{
+                      backgroundColor: actionStates[action.id as keyof typeof actionStates] ? 'rgb(108, 92, 231)' : 'rgb(46, 46, 62)',
+                    }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <motion.span
+                      className="inline-block h-5 w-5 rounded-full bg-white shadow-lg"
+                      animate={{
+                        x: actionStates[action.id as keyof typeof actionStates] ? 20 : 2,
+                      }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
+                  </motion.button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         </motion.div>
 
-        {/* Overall Stats Hero Section */}
-        {stats && (
-          <motion.div
-            className="bg-gradient-to-br from-accent-primary/20 to-accent-primary/5 border border-accent-primary/30 rounded-2xl p-6 mb-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <h3 className="text-lg font-black text-text-primary mb-6">Overall Stats</h3>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center">
-                <motion.div
-                  className="w-12 h-12 rounded-lg bg-accent-danger/10 flex items-center justify-center mx-auto mb-3"
-                  animate={botEnabled && stats.totals.likes > 0 ? { scale: [1, 1.1, 1] } : {}}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <Heart className="w-6 h-6 text-accent-danger" />
-                </motion.div>
-                <div className="text-3xl font-black text-text-primary">{stats.totals.likes}</div>
-                <div className="text-xs text-text-muted uppercase tracking-wider mt-2">Likes</div>
+        {/* Section 4: Activity Feed */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="space-y-4"
+        >
+          <h2 className="text-lg font-black text-text-primary">Activity Timeline</h2>
+          <div className="space-y-2">
+            {activities.length === 0 ? (
+              <div className="bg-noir-surface border border-noir-border rounded-xl p-8 text-center">
+                <p className="text-text-muted">No activity yet. Enable the bot to start.</p>
               </div>
-
-              <div className="text-center">
-                <motion.div
-                  className="w-12 h-12 rounded-lg bg-accent-primary/10 flex items-center justify-center mx-auto mb-3"
-                  animate={botEnabled && stats.totals.comments > 0 ? { scale: [1, 1.1, 1] } : {}}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <MessageCircle className="w-6 h-6 text-accent-primary" />
-                </motion.div>
-                <div className="text-3xl font-black text-text-primary">{stats.totals.comments}</div>
-                <div className="text-xs text-text-muted uppercase tracking-wider mt-2">Comments</div>
-              </div>
-
-              <div className="text-center">
-                <motion.div
-                  className="w-12 h-12 rounded-lg bg-accent-success/10 flex items-center justify-center mx-auto mb-3"
-                  animate={botEnabled && stats.totals.follows > 0 ? { scale: [1, 1.1, 1] } : {}}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <UserPlus className="w-6 h-6 text-accent-success" />
-                </motion.div>
-                <div className="text-3xl font-black text-text-primary">{stats.totals.follows}</div>
-                <div className="text-xs text-text-muted uppercase tracking-wider mt-2">Follows</div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Platform Stats */}
-        {stats && Object.keys(stats.byPlatform).length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="space-y-3"
-          >
-            <h3 className="text-lg font-black text-text-primary px-1 mb-4">By Platform</h3>
-            {Object.entries(stats.byPlatform).map(([platformId, platformStats], index) => {
-              const info = PLATFORM_INFO[platformId as keyof typeof PLATFORM_INFO] || {
-                name: platformId.charAt(0).toUpperCase() + platformId.slice(1),
-                icon: '📱',
-                color: 'from-slate-500 to-slate-600',
-              };
-              return (
-                <motion.div
-                  key={platformId}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.35 + index * 0.05 }}
-                  className="bg-noir-surface border border-noir-border rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="text-2xl">{info.icon}</div>
-                      <div>
-                        <p className="font-semibold text-text-primary">{info.name}</p>
-                        <p className="text-xs text-text-muted">{platformStats.total} total actions</p>
+            ) : (
+              activities.map((activity, index) => {
+                const platformInfo = getPlatformInfo(activity.platform);
+                return (
+                  <motion.div
+                    key={activity.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.35 + index * 0.03 }}
+                    className="bg-noir-surface border border-noir-border rounded-xl p-4 space-y-3"
+                  >
+                    {/* Header: Platform, Action, Time, Status */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{platformInfo?.icon}</span>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-accent-primary uppercase tracking-wide">
+                              {platformInfo?.name}
+                            </span>
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${getActionColor(activity.action)}`}>
+                              {getActionIcon(activity.action)}
+                              {activity.action}
+                            </div>
+                          </div>
+                          <p className="text-xs text-text-muted mt-0.5 font-semibold">{activity.target}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {activity.success && (
+                          <CheckCircle2 className="w-4 h-4 text-accent-success flex-shrink-0" />
+                        )}
+                        <span className="text-xs text-text-muted whitespace-nowrap">
+                          {formatTime(activity.timestamp)}
+                        </span>
                       </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center p-3 bg-noir-bg rounded-lg border border-accent-danger/20">
-                      <Heart className="w-4 h-4 text-accent-danger mx-auto mb-2" />
-                      <p className="text-xl font-black text-text-primary">{platformStats.likes}</p>
-                      <p className="text-xs text-text-muted mt-1">Likes</p>
-                    </div>
-                    <div className="text-center p-3 bg-noir-bg rounded-lg border border-accent-primary/20">
-                      <MessageCircle className="w-4 h-4 text-accent-primary mx-auto mb-2" />
-                      <p className="text-xl font-black text-text-primary">{platformStats.comments}</p>
-                      <p className="text-xs text-text-muted mt-1">Comments</p>
-                    </div>
-                    <div className="text-center p-3 bg-noir-bg rounded-lg border border-accent-success/20">
-                      <UserPlus className="w-4 h-4 text-accent-success mx-auto mb-2" />
-                      <p className="text-xl font-black text-text-primary">{platformStats.follows}</p>
-                      <p className="text-xs text-text-muted mt-1">Follows</p>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        )}
 
-        {/* Hashtags Section */}
+                    {/* Content: Comment text or Post title */}
+                    {activity.action === 'comment' && activity.content && (
+                      <div className="bg-noir-bg rounded-lg p-3 border-l-2 border-accent-primary">
+                        <p className="text-sm text-text-primary leading-relaxed italic">
+                          "{activity.content}"
+                        </p>
+                      </div>
+                    )}
+
+                    {(activity.action === 'like' || (activity.action === 'comment' && activity.postTitle)) && activity.postTitle && (
+                      <div className="bg-noir-bg rounded-lg p-3 border border-noir-border">
+                        <p className="text-xs text-text-muted uppercase tracking-wide font-semibold mb-1">
+                          {activity.action === 'like' ? 'Post Liked' : 'Post'}
+                        </p>
+                        <p className="text-sm font-semibold text-text-primary">{activity.postTitle}</p>
+                      </div>
+                    )}
+
+                    {activity.action === 'follow' && activity.username && (
+                      <div className="bg-noir-bg rounded-lg p-3 border border-noir-border">
+                        <p className="text-xs text-text-muted uppercase tracking-wide font-semibold mb-1">Followed User</p>
+                        <p className="text-sm font-semibold text-text-primary">@{activity.username}</p>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        </motion.div>
+
+        {/* Section 5: Target Hashtags */}
         <motion.div
-          className="bg-noir-surface border border-noir-border rounded-2xl p-6 mb-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
+          className="bg-noir-surface border border-noir-border rounded-2xl p-6 space-y-4"
         >
-          <h3 className="text-lg font-black text-text-primary mb-4">Target Hashtags</h3>
+          <h3 className="text-lg font-black text-text-primary">Target Hashtags</h3>
           <div className="space-y-4">
             <div className="flex gap-2">
               <input
@@ -396,14 +556,14 @@ export function BotPage() {
           </div>
         </motion.div>
 
-        {/* Templates Section */}
+        {/* Section 6: Comment Templates */}
         <motion.div
-          className="bg-noir-surface border border-noir-border rounded-2xl p-6 mb-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
+          className="bg-noir-surface border border-noir-border rounded-2xl p-6 space-y-4"
         >
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between">
             <h3 className="text-lg font-black text-text-primary">Comment Templates</h3>
             <motion.button
               onClick={() => setShowAddTemplate(!showAddTemplate)}
@@ -421,7 +581,7 @@ export function BotPage() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="space-y-3 mb-6 p-4 bg-noir-bg border border-noir-border rounded-xl"
+                className="space-y-3 p-4 bg-noir-bg border border-noir-border rounded-xl"
               >
                 <input
                   type="text"
@@ -492,56 +652,6 @@ export function BotPage() {
                   </motion.button>
                 </motion.div>
               ))
-            )}
-          </div>
-        </motion.div>
-
-        {/* Activity Feed */}
-        <motion.div
-          className="bg-noir-surface border border-noir-border rounded-2xl p-6 mb-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-        >
-          <h3 className="text-lg font-black text-text-primary mb-4">Recent Activity</h3>
-          <div className="space-y-3">
-            {activities.length === 0 ? (
-              <p className="text-sm text-text-muted text-center py-8">
-                No activity yet. Enable the bot to start.
-              </p>
-            ) : (
-              activities.slice(0, 10).map((activity, index) => {
-                const icons = {
-                  like: { icon: Heart, color: 'text-accent-danger', bg: 'bg-accent-danger/10' },
-                  comment: { icon: MessageCircle, color: 'text-accent-primary', bg: 'bg-accent-primary/10' },
-                  follow: { icon: UserPlus, color: 'text-accent-success', bg: 'bg-accent-success/10' },
-                };
-
-                const config = icons[activity.type];
-                const IconComponent = config.icon;
-
-                return (
-                  <motion.div
-                    key={activity.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.02 }}
-                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-noir-bg/50 transition-colors"
-                  >
-                    <div className={`${config.bg} rounded-lg p-2.5 flex-shrink-0`}>
-                      <IconComponent className={`w-4 h-4 ${config.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-text-primary capitalize font-medium">
-                        {activity.type} on {activity.platform}
-                      </p>
-                    </div>
-                    <span className="text-xs text-text-muted flex-shrink-0">
-                      {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </motion.div>
-                );
-              })
             )}
           </div>
         </motion.div>
