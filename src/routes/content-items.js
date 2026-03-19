@@ -22,7 +22,7 @@ router.get('/', requireAuth, requireCompanyContext, async (req, res) => {
     const supabase = getSupabaseAdmin();
     let query = supabase
       .from('content_items')
-      .select('*, rss_feeds(name, url)', { count: 'exact' })
+      .select('*, rss_feeds(feed_name, feed_url)', { count: 'exact' })
       .eq('company_id', req.company.id);
 
     // Filter by status if provided
@@ -282,12 +282,11 @@ router.post('/capture', requireAuth, requireCompanyContext, async (req, res) => 
       .from('content_items')
       .insert({
         company_id: req.company.id,
-        title: `Captured: ${url.substring(0, 50)}`,
-        excerpt: `URL captured from ${new URL(url).hostname}`,
         source_url: url,
-        source_title: `Captured: ${url}`,
-        status: 'pending',
-        created_at: new Date().toISOString()
+        source_title: `Captured: ${url.substring(0, 80)}`,
+        source_content: `URL captured from ${new URL(url).hostname}`,
+        source_guid: `capture-${Date.now()}`,
+        review_status: 'pending'
       })
       .select()
       .single();
