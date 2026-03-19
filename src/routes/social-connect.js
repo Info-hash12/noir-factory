@@ -155,77 +155,36 @@ router.get('/:platform/callback', async (req, res) => {
     // Exchange code for access token
     const tokenData = await oauthService.handleCallback(platform, code, companyId);
 
-    // Store in database
-    const db = getDatabase();
-    if (db) {
-      try {
-        // Create company_integrations table if it doesn't exist
-        db.run(`
-          CREATE TABLE IF NOT EXISTS company_integrations (
-            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-            company_id TEXT NOT NULL,
-            platform TEXT NOT NULL,
-            access_token TEXT NOT NULL,
-            refresh_token TEXT,
-            account_name TEXT,
-            account_id TEXT,
-            expires_at TEXT,
-            connected_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-            disconnected_at TEXT,
-            is_active INTEGER DEFAULT 1,
-            error_message TEXT,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-            updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-            UNIQUE(company_id, platform)
-          )
-        `);
+    // Store in Supabase
+    try {
+      const supabase = getSupabaseAdmin();
 
-        // Insert or update integration
-        const exists = db.exec(`
-          SELECT id FROM company_integrations
-          WHERE company_id = ? AND platform = ?
-        `, [companyId, platform]);
+      // Delete existing integration for this company+platform
+      await supabase.from('company_integrations')
+        .delete()
+        .eq('company_id', companyId)
+        .eq('platform', platform);
 
-        if (exists[0]?.values?.length > 0) {
-          // Update existing
-          db.run(`
-            UPDATE company_integrations
-            SET access_token = ?, refresh_token = ?, account_name = ?,
-                account_id = ?, expires_at = ?, is_active = 1,
-                error_message = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            WHERE company_id = ? AND platform = ?
-          `, [
-            tokenData.access_token,
-            tokenData.refresh_token,
-            tokenData.account_name,
-            tokenData.account_id,
-            tokenData.expires_at,
-            companyId,
-            platform,
-          ]);
-        } else {
-          // Insert new
-          db.run(`
-            INSERT INTO company_integrations
-            (company_id, platform, access_token, refresh_token, account_name,
-             account_id, expires_at, connected_at, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-          `, [
-            companyId,
-            platform,
-            tokenData.access_token,
-            tokenData.refresh_token,
-            tokenData.account_name,
-            tokenData.account_id,
-            tokenData.expires_at,
-            new Date().toISOString(),
-          ]);
-        }
+      // Insert new integration
+      const { error: insertError } = await supabase.from('company_integrations').insert({
+        company_id: companyId,
+        platform: platform,
+        integration_type: 'oauth',
+        account_name: tokenData.account_name || platform,
+        account_id: tokenData.account_id || '',
+        credentials: { access_token: tokenData.access_token, refresh_token: tokenData.refresh_token },
+        status: 'active',
+        token_expires_at: tokenData.expires_at || null,
+        last_used_at: new Date().toISOString()
+      });
 
+      if (insertError) {
+        logger.error('Failed to store integration:', insertError.message);
+      } else {
         logger.info(`Stored integration for ${platform} / ${companyId}`);
-      } catch (dbError) {
-        logger.error('Failed to store integration:', dbError.message);
       }
+    } catch (dbError) {
+      logger.error('Failed to store integration:', dbError.message);
     }
 
     // Return success and redirect to bot page
@@ -252,7 +211,7 @@ router.get('/:platform/callback', async (req, res) => {
 router.get('/status', (req, res) => {
   try {
     const companyId = req.headers['x-company-id'] || 'default-company';
-    const db = getDatabase();
+    const db = getSupabaseAdmin();
 
     const platforms = {};
 
@@ -330,44 +289,17 @@ router.delete('/:platform', async (req, res) => {
       });
     }
 
-    const db = getDatabase();
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-      });
+    const supabase = getSupabaseAdmin();
+
+    // Delete integration
+    const { error: delError } = await supabase.from('company_integrations')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('platform', platform);
+
+    if (delError) {
+      logger.error('Failed to disconnect:', delError.message);
     }
-
-    // Get integration
-    const result = db.exec(
-      `SELECT id, access_token FROM company_integrations
-       WHERE company_id = ? AND platform = ?`,
-      [companyId, platform]
-    );
-
-    if (!result[0]?.values?.length) {
-      return res.status(404).json({
-        success: false,
-        error: `No integration found for ${platform}`,
-      });
-    }
-
-    const [integrationId, accessToken] = result[0].values[0];
-
-    // Revoke token with platform
-    try {
-      await oauthService.revokeToken(platform, accessToken);
-    } catch (revokeError) {
-      logger.warn(`Failed to revoke token for ${platform}:`, revokeError.message);
-    }
-
-    // Mark as inactive in database
-    db.run(`
-      UPDATE company_integrations
-      SET is_active = 0, disconnected_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-      WHERE id = ?
-    `, [integrationId]);
 
     logger.info(`Disconnected ${platform} for company ${companyId}`);
 
