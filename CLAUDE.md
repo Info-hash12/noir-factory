@@ -66,3 +66,5 @@ SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY
 CF_ANALYTICS_TOKEN, CF_ZONE_PROXITAP, CF_ZONE_ALLADRE
 META_APP_ID, META_APP_SECRET
 ```
+
+<!-- deploy trigger: triggered to reconnect Render after repo transfer -->
