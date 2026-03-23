@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, memo } from 'react';
 import { useContentStore } from '../store/contentStore';
 import { motion, Reorder } from 'framer-motion';
 import { CheckCircle, Clock, AlertCircle, Loader, Share2, RotateCcw, ChevronDown, Layers2, TrendingUp, TrendingDown, GripVertical } from 'lucide-react';
@@ -27,10 +27,14 @@ export function QueuePage() {
     return () => clearInterval(interval);
   }, [fetchContentJobs]);
 
-  // Update queued jobs list whenever jobs change
+  // Update queued jobs list only when queued IDs actually change
   useEffect(() => {
-    const queued = jobs.filter(j => j.status === 'queued');
-    setQueuedJobs(queued);
+    const queued = jobs.filter(j => j.review_status === 'pending_review' || j.status === 'queued');
+    setQueuedJobs(prev => {
+      const prevIds = prev.map(j => j.id).join(',');
+      const newIds = queued.map(j => j.id).join(',');
+      return prevIds === newIds ? prev : queued; // skip re-render if same jobs
+    });
   }, [jobs]);
 
   // Batch countdown timer
@@ -129,7 +133,7 @@ export function QueuePage() {
   };
 
   const costs = calculateCosts();
-  const costTrend = Math.random() > 0.5 ? 1 : -1; // Mock trend
+  const costTrend = 1; // Static — removes per-render randomness that caused flicker
 
   if (loadingJobs) {
     return (
@@ -209,7 +213,7 @@ export function QueuePage() {
               <p className="text-xs text-text-secondary mt-1">
                 Next batch runs in:{' '}
                 <span className="font-black text-accent-primary">
-                  {Math.floor(batchCountdown / 60)}m {batchCountdown % 60}s
+                  {Math.floor(batchCountdown / 60)}m {String(batchCountdown % 60).padStart(2,'0')}s
                 </span>
               </p>
             </div>
