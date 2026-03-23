@@ -620,49 +620,72 @@ router.post('/:id/retry', async (req, res) => {
 });
 
 
-// DELETE /api/content-jobs/:id — remove a job from the queue
+/**
+ * DELETE /api/content-jobs/:id
+ * Delete a content job
+ */
 router.delete('/:id', async (req, res) => {
   try {
-    const { 'x-company-id': companyId } = req.headers;
     const { id } = req.params;
+    const { 'x-company-id': companyId } = req.headers;
 
     if (!companyId) {
-      return res.status(400).json({ success: false, error: 'X-Company-ID header is required' });
-    }
-
-    if (!id) {
-      return res.status(400).json({ success: false, error: 'Job ID is required' });
+      return res.status(400).json({
+        success: false,
+        error: 'X-Company-ID header is required'
+      });
     }
 
     const client = getSupabaseAdmin();
 
-    // Verify the job belongs to this company before deleting
-    const { data: job, error: fetchError } = await client
+    // Verify job exists and belongs to company
+    const { data: existing, error: checkError } = await client
       .from('content_jobs')
-      .select('id, job_type, status')
+      .select('id, status')
       .eq('id', id)
       .eq('company_id', companyId)
       .single();
 
-    if (fetchError || !job) {
-      return res.status(404).json({ success: false, error: 'Job not found' });
+    if (checkError || !existing) {
+      return res.status(404).json({
+        success: false,
+        error: 'Job not found'
+      });
     }
 
-    const { error } = await client
+    // Check if job is processing
+    if (existing.status === 'processing') {
+      return res.status(409).json({
+        success: false,
+        error: 'Cannot delete a job that is currently processing'
+      });
+    }
+
+    // Delete the job
+    const { error: deleteError } = await client
       .from('content_jobs')
       .delete()
-      .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('id', id);
 
-    if (error) {
-      logger.error('Failed to delete content job:', error);
-      return res.status(500).json({ success: false, error: 'Failed to delete job' });
+    if (deleteError) {
+      logger.error('Failed to delete content job:', deleteError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to delete job'
+      });
     }
 
-    res.json({ success: true, id });
+    res.json({
+      success: true,
+      message: 'Content job deleted'
+    });
+
   } catch (error) {
     logger.error('DELETE /content-jobs/:id error:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
