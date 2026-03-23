@@ -87,11 +87,6 @@ export function createContentJob(jobData: {
   return apiCall('/content-jobs', { method: 'POST', body: jobData });
 }
 
-// Delete a job from the queue
-export function deleteContentJob(jobId: string) {
-  return apiCall(`/content-jobs/${jobId}`, { method: 'DELETE' });
-}
-
 // Avatars
 export function getAvatars() {
   return apiCall('/avatars');
@@ -106,6 +101,10 @@ export function updateContentJob(jobId: string, updates: Record<string, unknown>
     method: 'PATCH',
     body: updates,
   });
+}
+
+export function deleteContentJob(jobId: string) {
+  return apiCall(`/content-jobs/${jobId}`, { method: 'DELETE' });
 }
 
 export function retryContentJob(jobId: string) {
