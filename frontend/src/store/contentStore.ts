@@ -106,8 +106,7 @@ export const useContentStore = create<ContentState>((set, get) => ({
       const newJobs = result.jobs || result.data || [];
       const current = get().jobs;
       // Only update if data actually changed to avoid unnecessary re-renders
-      const changed = JSON.stringify(newJobs.map((j: {id:string,review_status:string,publish_status:string}) => ({id:j.id,rs:j.review_status,ps:j.publish_status}))) !==
-                      JSON.stringify(current.map((j: {id:string,review_status:string,publish_status:string}) => ({id:j.id,rs:j.review_status,ps:j.publish_status})));
+      const changed = JSON.stringify((newJobs as any[]).map((j) => j.id)) !== JSON.stringify((current as any[]).map((j) => j.id));
       if (changed || showLoading) {
         set({ jobs: newJobs, loadingJobs: false });
       } else {

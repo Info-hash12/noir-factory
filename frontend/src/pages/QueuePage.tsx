@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, memo } from 'react';
+import * as api from '../lib/api';
 import { useContentStore } from '../store/contentStore';
 import { motion, Reorder } from 'framer-motion';
 import { CheckCircle, Clock, AlertCircle, Loader, Share2, RotateCcw, ChevronDown, Layers2, TrendingUp, TrendingDown, GripVertical, Play, Pause } from 'lucide-react';
@@ -58,7 +59,6 @@ export function QueuePage() {
   const handleRetry = useCallback(async (jobId: string) => {
     setRetryingId(jobId);
     try {
-      const { default: api } = await import('../lib/api');
       await (api as any).retryContentJob(jobId);
       await fetchContentJobs(false);
     } catch (error) {
@@ -83,7 +83,6 @@ export function QueuePage() {
     setIsReordering(true);
     setQueuedJobs(reorderedJobs);
     try {
-      const { default: api } = await import('../lib/api');
       const jobIds = reorderedJobs.map(j => j.id);
       await (api as any).reorderContentJobs(jobIds);
     } catch (error) {
