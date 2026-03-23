@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import * as api from '../lib/api';
 import { useContentStore } from '../store/contentStore';
 import { motion, Reorder } from 'framer-motion';
-import { CheckCircle, Clock, AlertCircle, Loader, Share2, RotateCcw, ChevronDown, Layers2, TrendingUp, TrendingDown, GripVertical, Play, Pause } from 'lucide-react';
+import { CheckCircle, Clock, AlertCircle, Loader, Share2, RotateCcw, ChevronDown, Layers2, TrendingUp, TrendingDown, GripVertical, Play, Pause, Trash2 } from 'lucide-react';
 
 const STATUS_CONFIG = {
   queued: { icon: Clock, color: 'text-text-secondary', bg: 'bg-noir-border/20' },
@@ -31,9 +31,10 @@ const BatchCountdown = memo(({ initialSeconds }: { initialSeconds: number }) => 
 });
 
 export function QueuePage() {
-  const { jobs, loadingJobs, fetchContentJobs } = useContentStore();
+  const { jobs, loadingJobs, fetchContentJobs, deleteContentJob } = useContentStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isProcessingNow, setIsProcessingNow] = useState(false);
   const [queuedJobs, setQueuedJobs] = useState<typeof jobs>([]);
   const [isReordering, setIsReordering] = useState(false);
@@ -67,6 +68,21 @@ export function QueuePage() {
       setRetryingId(null);
     }
   }, [fetchContentJobs]);
+
+  const handleDelete = useCallback(async (jobId: string) => {
+    if (!window.confirm('Remove this job from the queue?')) return;
+
+    setDeletingId(jobId);
+    try {
+      await deleteContentJob(jobId);
+      setExpandedId(null);
+    } catch (error) {
+      console.error('Failed to delete job:', error);
+      alert(error instanceof Error ? error.message : 'Failed to delete job');
+    } finally {
+      setDeletingId(null);
+    }
+  }, [deleteContentJob]);
 
   const handleProcessNow = useCallback(async () => {
     setIsProcessingNow(true);
@@ -271,7 +287,16 @@ export function QueuePage() {
                         <div><p className="text-text-muted text-xs uppercase tracking-wider mb-1">Job ID</p><p className="text-text-secondary font-mono text-xs break-all bg-noir-bg/50 p-2 rounded-lg border border-noir-border">{job.id}</p></div>
                         <div><p className="text-text-muted text-xs uppercase tracking-wider mb-1">Platforms</p><div className="flex flex-wrap gap-2">{job.target_platforms?.map(p => <span key={p} className="px-2 py-1 bg-noir-bg border border-noir-border text-text-secondary text-xs rounded-lg">{p}</span>)}</div></div>
                         {job.layout_type && <div><p className="text-text-muted text-xs uppercase tracking-wider mb-1">Layout</p><p className="text-text-primary font-semibold">{job.layout_type}</p></div>}
-                        {job.caption_text && <div><p className="text-text-muted text-xs uppercase tracking-wider mb-1">Caption</p><p className="text-text-secondary text-xs bg-noir-bg/50 p-2 rounded-lg border border-noir-border line-clamp-2">{job.caption_text}</p></div>}
+                        {job.caption_text && <div><p className="text-text-muted text-xs uppercase tracking-wider mb-1">Caption</p><p className="text-text-secondary text-xs bg-noir-bg/50 p-2 rounded-lg border border-noir-border line-clamp-2">{job.caption_text}</p>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(job.id); }}
+                          disabled={deletingId === job.id}
+                          className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-accent-danger/10 text-accent-danger hover:bg-accent-danger/20 transition-colors text-xs font-semibold disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingId === job.id ? 'Deleting...' : 'Delete Job'}
+                        </button>
+</div>}
                       </div>
                     )}
                   </Reorder.Item>
@@ -328,6 +353,16 @@ export function QueuePage() {
                           <RotateCcw className={`w-5 h-5 ${retryingId === job.id ? 'animate-spin' : ''}`} />
                           Retry Job
                         </motion.button>
+                      )}
+                      {job.status !== 'processing' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(job.id); }}
+                          disabled={deletingId === job.id}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-accent-danger/10 text-accent-danger rounded-xl font-semibold hover:bg-accent-danger/20 transition-colors text-xs disabled:opacity-50 min-h-[44px]"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          {deletingId === job.id ? 'Deleting...' : 'Delete Job'}
+                        </button>
                       )}
                     </div>
                   )}
