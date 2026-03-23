@@ -87,6 +87,11 @@ export function createContentJob(jobData: {
   return apiCall('/content-jobs', { method: 'POST', body: jobData });
 }
 
+// Delete a job from the queue
+export function deleteContentJob(jobId: string) {
+  return apiCall(`/content-jobs/${jobId}`, { method: 'DELETE' });
+}
+
 // Avatars
 export function getAvatars() {
   return apiCall('/avatars');
