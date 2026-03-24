@@ -332,30 +332,31 @@ async function initializeApp() {
  * Start the server
  */
 async function startServer() {
+  // Load API keys from Supabase server_config into process.env
+  await loadServerConfig();
+
   // Start listening IMMEDIATELY (Cloud Run requirement)
-  const server = loadServerConfig().then(() => {
-  app.listen(PORT, () => {
-      logger.info(`🚀 Noir Factory server running on port ${PORT}`);
-      logger.info(`📡 Health check: http://localhost:${PORT}/healthz`);
-      
-      // Initialize services AFTER server is listening
-      setImmediate(() => {
-        initializeApp().catch(err => {
-          logger.error('Post-startup initialization failed:', err.message);
-        });
+  const server = app.listen(PORT, () => {
+    logger.info(`🚀 Noir Factory server running on port ${PORT}`);
+    logger.info(`📡 Health check: http://localhost:${PORT}/healthz`);
+
+    // Initialize services AFTER server is listening
+    setImmediate(() => {
+      initializeApp().catch(err => {
+        logger.error('Post-startup initialization failed:', err.message);
       });
     });
-  
-    // Graceful shutdown
-    server.on('error', (error) => {
-      logger.error('Server error:', error.message);
-      if (error.code === 'EADDRINUSE') {
-        logger.error(`Port ${PORT} is already in use`);
-        process.exit(1);
-      }
-    });
-  }
-  
+  });
+
+  // Graceful shutdown
+  server.on('error', (error) => {
+    logger.error('Server error:', error.message);
+    if (error.code === 'EADDRINUSE') {
+      logger.error(`Port ${PORT} is already in use`);
+      process.exit(1);
+    }
+  });
+
   // ─── Graceful Shutdown ──────────────────────────────────────────────────────
   // Track in-flight pipeline jobs so we don't kill them mid-process
   const activeJobs = new Set();
