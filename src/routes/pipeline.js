@@ -193,7 +193,7 @@ router.post('/process-now', async (req, res) => {
       .from('content_jobs')
       .update({ review_status: 'approved' })
       .eq('company_id', companyId)
-      .in('review_status', ['pending_review', 'queued'])
+      .in('review_status', ['pending_review', 'queued', 'approved'])
       .eq('publish_status', 'draft')
       .select('id');
 
