@@ -3,7 +3,7 @@
  * Full end-to-end: RSS → Airtable → Approve → Screenshot → Script → TTS → Lip-sync → Compose → Publer
  */
 
-const { getSupabase } = require('../db/local-adapter');
+const { getSupabaseAdmin: getSupabase } = require('../db/supabase');
 const airtable = require('./airtable.service');
 const { captureRedditScreenshot } = require('./screenshot.service');
 const { generateScript } = require('./openrouter.service');
