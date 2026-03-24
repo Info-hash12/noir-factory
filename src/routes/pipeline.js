@@ -185,7 +185,8 @@ router.post('/one-off', async (req, res) => {
 router.post('/process-now', async (req, res) => {
   try {
     const { 'x-company-id': companyId } = req.headers;
-    const db = getSupabase();
+    const { getSupabaseAdmin } = require('../db/supabase');
+    const db = getSupabaseAdmin();
 
     // First: approve all jobs that are pending_review or queued
     const { data: pending } = await db
