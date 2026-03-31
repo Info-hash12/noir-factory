@@ -44,11 +44,9 @@ build:
   run:
     # flash-attn must compile after torch is installed
     - "pip install flash-attn==2.6.3 --no-build-isolation"
-    # xfuser without deps to avoid pulling newer diffusers/transformers
-    - "pip install xfuser==0.4.1 --no-deps"
-    # distvae is a runtime dep of xfuser (also --no-deps to keep pinned versions)
-    - "pip install distvae --no-deps"
-    # force-reinstall pinned versions last — xfuser overwrites them
+    # xfuser WITH deps — installs distvae, yunchang, etc.
+    - "pip install xfuser==0.4.1"
+    # force-reinstall pinned versions — xfuser pulls newer ones
     - "pip install --force-reinstall diffusers==0.31.0 transformers==4.49.0"
     # clone InfiniteTalk repo into image
     - "git clone https://github.com/MeiGen-AI/InfiniteTalk.git /src/InfiniteTalk"
