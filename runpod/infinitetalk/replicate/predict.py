@@ -4,7 +4,7 @@ Replicate Cog predictor for InfiniteTalk LipSync.
 Accepts image_url + audio_url, runs Wan2.1 InfiniteTalk inference,
 uploads output MP4 to Supabase, returns public video URL as a string.
 
-Uses FusioniX LoRA (8 steps) + TeaCache for fast inference.
+Uses LightX2V step-distilled LoRA (4 steps) for fast inference.
 """
 
 import os
@@ -23,7 +23,7 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 
 WEIGHTS_DIR = Path("/src/weights")
 INFINITETALK_REPO = Path("/src/InfiniteTalk")
-FUSIONX_LORA_PATH = WEIGHTS_DIR / "Wan2.1_I2V_14B_FusionX_LoRA.safetensors"
+LIGHTX2V_LORA_PATH = WEIGHTS_DIR / "Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors"
 
 # Inference timeout: 20 minutes
 INFERENCE_TIMEOUT = 1200
@@ -54,20 +54,20 @@ class Predictor(BasePredictor):
             snapshot_download(repo_id=repo_id, local_dir=str(dest))
             log(f"[weights] {local_name} done")
 
-        # FusioniX I2V LoRA (~371MB)
-        if not FUSIONX_LORA_PATH.exists():
-            log("[weights] Downloading FusioniX I2V LoRA...")
+        # LightX2V I2V LoRA – step+cfg distilled, rank64 (~739MB)
+        if not LIGHTX2V_LORA_PATH.exists():
+            log("[weights] Downloading LightX2V I2V LoRA (rank64)...")
             hf_hub_download(
-                repo_id="vrgamedevgirl84/Wan14BT2VFusioniX",
-                filename="FusionX_LoRa/Wan2.1_I2V_14B_FusionX_LoRA.safetensors",
-                local_dir=str(WEIGHTS_DIR / "_fusionx_tmp"),
+                repo_id="lightx2v/Wan2.1-I2V-14B-480P-StepDistill-CfgDistill-Lightx2v",
+                filename="loras/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors",
+                local_dir=str(WEIGHTS_DIR / "_lightx2v_tmp"),
             )
             # Move to expected location
-            src = WEIGHTS_DIR / "_fusionx_tmp" / "FusionX_LoRa" / "Wan2.1_I2V_14B_FusionX_LoRA.safetensors"
-            src.rename(FUSIONX_LORA_PATH)
-            log(f"[weights] FusioniX LoRA done ({FUSIONX_LORA_PATH.stat().st_size} bytes)")
+            src = WEIGHTS_DIR / "_lightx2v_tmp" / "loras" / "Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors"
+            src.rename(LIGHTX2V_LORA_PATH)
+            log(f"[weights] LightX2V LoRA done ({LIGHTX2V_LORA_PATH.stat().st_size} bytes)")
         else:
-            log("[weights] FusioniX LoRA cached")
+            log("[weights] LightX2V LoRA cached")
 
         log("[setup] Ready.")
 
@@ -119,11 +119,10 @@ class Predictor(BasePredictor):
             output_path = tmpdir / "output_video"
 
             # ---- Run inference --------------------------------------------------
-            # FusioniX LoRA + TeaCache config (from InfiniteTalk README)
-            # - 8 steps instead of 40 (5x fewer)
-            # - TeaCache skips redundant steps (~30-40% faster)
-            # - Adjusted guide scales for LoRA mode
-            # - sample_shift=2 per README
+            # LightX2V step-distilled LoRA (from InfiniteTalk README)
+            # - 4 steps instead of 40 (10x fewer) via step+cfg distillation
+            # - CFG disabled (guide_scale=1.0) per distillation design
+            # - sample_shift=2 per InfiniteTalk README
             cmd = [
                 "python", "-u",
                 str(INFINITETALK_REPO / "generate_infinitetalk.py"),
@@ -139,7 +138,7 @@ class Predictor(BasePredictor):
                     / "infinitetalk.safetensors"
                 ),
                 "--lora_dir",
-                str(FUSIONX_LORA_PATH),
+                str(LIGHTX2V_LORA_PATH),
                 "--lora_scale",
                 "1.0",
                 "--input_json",
@@ -147,7 +146,7 @@ class Predictor(BasePredictor):
                 "--size",
                 f"infinitetalk-{'480' if resolution == '480p' else '720'}",
                 "--sample_steps",
-                "8",
+                "4",
                 "--sample_shift",
                 "2",
                 "--sample_text_guide_scale",
@@ -158,12 +157,11 @@ class Predictor(BasePredictor):
                 "streaming",
                 "--motion_frame",
                 "9",
-                "--use_teacache",
                 "--save_file",
                 str(output_path),
             ]
 
-            log(f"[run] Launching inference (FusioniX 8-step + TeaCache, timeout={INFERENCE_TIMEOUT}s)...")
+            log(f"[run] Launching inference (LightX2V 4-step distilled, timeout={INFERENCE_TIMEOUT}s)...")
             log(f"[run] Command: {' '.join(cmd[:4])} ...")
 
             # Stream subprocess stdout/stderr to our stdout so Cog logs show progress
