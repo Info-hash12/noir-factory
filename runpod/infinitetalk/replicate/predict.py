@@ -3,6 +3,8 @@ Replicate Cog predictor for InfiniteTalk LipSync.
 
 Accepts image_url + audio_url, runs Wan2.1 InfiniteTalk inference,
 uploads output MP4 to Supabase, returns public video URL as a string.
+
+Uses FusioniX LoRA (8 steps) + TeaCache for fast inference.
 """
 
 import os
@@ -14,15 +16,16 @@ from pathlib import Path
 
 import httpx
 from cog import BasePredictor, Input
-from huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download, hf_hub_download
 
 # Force unbuffered stdout so Cog logs appear in real time
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 WEIGHTS_DIR = Path("/src/weights")
 INFINITETALK_REPO = Path("/src/InfiniteTalk")
+FUSIONX_LORA_PATH = WEIGHTS_DIR / "Wan2.1_I2V_14B_FusionX_LoRA.safetensors"
 
-# Inference timeout: 20 minutes (generous for 14B model)
+# Inference timeout: 20 minutes
 INFERENCE_TIMEOUT = 1200
 
 
@@ -37,6 +40,7 @@ class Predictor(BasePredictor):
         os.environ["PYTHONPATH"] = str(INFINITETALK_REPO)
         WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Base models
         for repo_id, local_name in [
             ("TencentGameMate/chinese-wav2vec2-base", "chinese-wav2vec2-base"),
             ("MeiGen-AI/InfiniteTalk", "InfiniteTalk"),
@@ -49,6 +53,21 @@ class Predictor(BasePredictor):
             log(f"[weights] Downloading {repo_id}...")
             snapshot_download(repo_id=repo_id, local_dir=str(dest))
             log(f"[weights] {local_name} done")
+
+        # FusioniX I2V LoRA (~371MB)
+        if not FUSIONX_LORA_PATH.exists():
+            log("[weights] Downloading FusioniX I2V LoRA...")
+            hf_hub_download(
+                repo_id="vrgamedevgirl84/Wan14BT2VFusioniX",
+                filename="FusionX_LoRa/Wan2.1_I2V_14B_FusionX_LoRA.safetensors",
+                local_dir=str(WEIGHTS_DIR / "_fusionx_tmp"),
+            )
+            # Move to expected location
+            src = WEIGHTS_DIR / "_fusionx_tmp" / "FusionX_LoRa" / "Wan2.1_I2V_14B_FusionX_LoRA.safetensors"
+            src.rename(FUSIONX_LORA_PATH)
+            log(f"[weights] FusioniX LoRA done ({FUSIONX_LORA_PATH.stat().st_size} bytes)")
+        else:
+            log("[weights] FusioniX LoRA cached")
 
         log("[setup] Ready.")
 
@@ -86,11 +105,6 @@ class Predictor(BasePredictor):
             log(f"[run] Audio: {audio_path} ({audio_path.stat().st_size} bytes)")
 
             # ---- Build input JSON -----------------------------------------------
-            # CRITICAL: InfiniteTalk expects a SINGLE dict with these keys:
-            #   cond_video  — path to reference image (despite the name)
-            #   cond_audio  — dict mapping person IDs to audio paths
-            #   prompt      — text description
-            # NOT a list, and NOT {"image": ..., "audio": ...}
             input_json = tmpdir / "input.json"
             input_json.write_text(
                 json.dumps(
@@ -105,8 +119,13 @@ class Predictor(BasePredictor):
             output_path = tmpdir / "output_video"
 
             # ---- Run inference --------------------------------------------------
+            # FusioniX LoRA + TeaCache config (from InfiniteTalk README)
+            # - 8 steps instead of 40 (5x fewer)
+            # - TeaCache skips redundant steps (~30-40% faster)
+            # - Adjusted guide scales for LoRA mode
+            # - sample_shift=2 per README
             cmd = [
-                "python", "-u",  # -u forces unbuffered subprocess output
+                "python", "-u",
                 str(INFINITETALK_REPO / "generate_infinitetalk.py"),
                 "--ckpt_dir",
                 str(WEIGHTS_DIR / "Wan2.1-I2V-14B-480P"),
@@ -119,35 +138,45 @@ class Predictor(BasePredictor):
                     / "single"
                     / "infinitetalk.safetensors"
                 ),
+                "--lora_dir",
+                str(FUSIONX_LORA_PATH),
+                "--lora_scale",
+                "1.0",
                 "--input_json",
                 str(input_json),
                 "--size",
                 f"infinitetalk-{'480' if resolution == '480p' else '720'}",
                 "--sample_steps",
-                "40",
+                "8",
+                "--sample_shift",
+                "2",
+                "--sample_text_guide_scale",
+                "1.0",
+                "--sample_audio_guide_scale",
+                "2.0",
                 "--mode",
                 "streaming",
                 "--motion_frame",
                 "9",
+                "--use_teacache",
                 "--save_file",
                 str(output_path),
             ]
 
-            log(f"[run] Launching inference (timeout={INFERENCE_TIMEOUT}s)...")
+            log(f"[run] Launching inference (FusioniX 8-step + TeaCache, timeout={INFERENCE_TIMEOUT}s)...")
             log(f"[run] Command: {' '.join(cmd[:4])} ...")
 
             # Stream subprocess stdout/stderr to our stdout so Cog logs show progress
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # merge stderr into stdout
+                stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1,  # line buffered
+                bufsize=1,
                 cwd=str(INFINITETALK_REPO),
                 env=env,
             )
 
-            # Stream output lines in real time
             output_lines = []
             try:
                 for line in proc.stdout:
@@ -175,7 +204,6 @@ class Predictor(BasePredictor):
             # ---- Locate output --------------------------------------------------
             output_mp4 = Path(str(output_path) + ".mp4")
             if not output_mp4.exists():
-                # try common alternatives
                 for suffix in ["_0.mp4", "_000.mp4", "/output.mp4"]:
                     alt = Path(str(output_path) + suffix)
                     if alt.exists():
