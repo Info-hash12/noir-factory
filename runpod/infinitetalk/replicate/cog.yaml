@@ -49,8 +49,7 @@ build:
     - "pip install distvae --no-deps"
     # Patch xfuser to use lazy imports — avoids needing yunchang at import time
     # InfiniteTalk only needs xfuser.core.distributed, not the full xfuser package
-    # Use pip show to find path (cannot import xfuser at build time — no GPU)
-    - "bash -c \"XDIR=$(pip show xfuser | grep Location | cut -d' ' -f2)/xfuser && echo '# lazy' > $XDIR/__init__.py && echo '# lazy' > $XDIR/core/__init__.py && echo 'xfuser patched for lazy imports'\""
+    - "python3 -c \"import subprocess,pathlib;loc=[l for l in subprocess.check_output(['pip','show','xfuser']).decode().splitlines() if l.startswith('Location:')][0].split(': ')[1];base=pathlib.Path(loc)/'xfuser';(base/'__init__.py').write_text('# lazy\\n');(base/'core'/'__init__.py').write_text('# lazy\\n');print('xfuser patched')\""
     # force-reinstall pinned versions last — xfuser overwrites them
     - "pip install --force-reinstall diffusers==0.31.0 transformers==4.49.0"
     # clone InfiniteTalk repo into image
