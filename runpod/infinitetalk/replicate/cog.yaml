@@ -44,9 +44,13 @@ build:
   run:
     # flash-attn must compile after torch is installed
     - "pip install flash-attn==2.6.3 --no-build-isolation"
-    # xfuser WITH deps — installs distvae, yunchang, etc.
-    - "pip install xfuser==0.4.1"
-    # force-reinstall pinned versions — xfuser pulls newer ones
+    # xfuser without deps (distvae/yunchang are optional & cause cascading issues)
+    - "pip install xfuser==0.4.1 --no-deps"
+    - "pip install distvae --no-deps"
+    # Patch xfuser to use lazy imports — avoids needing yunchang/distvae at import time
+    # InfiniteTalk only needs xfuser.core.distributed, not the full xfuser package
+    - "python3 -c \"import xfuser,pathlib;base=pathlib.Path(xfuser.__file__).parent;base.joinpath('__init__.py').write_text('# lazy\\n');core=base/'core'/'__init__.py';core.write_text('# lazy\\n') if core.exists() else None;print('xfuser patched for lazy imports')\""
+    # force-reinstall pinned versions last — xfuser overwrites them
     - "pip install --force-reinstall diffusers==0.31.0 transformers==4.49.0"
     # clone InfiniteTalk repo into image
     - "git clone https://github.com/MeiGen-AI/InfiniteTalk.git /src/InfiniteTalk"
